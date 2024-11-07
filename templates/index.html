@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Chat com Assistente</title>
+    <!-- Inclua o arquivo CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <!-- Inclua o marked.js e o DOMPurify -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@2.4.0/dist/purify.min.js"></script>
+</head>
+<body>
+    {% if 'api_key' not in session %}
+    <div id="api-key-container" class="api-key-container">
+        <h1>Insira sua OpenAI API Key</h1>
+        <input type="password" id="api-key-input" placeholder="OpenAI API Key">
+        <button id="api-key-button">Enviar</button>
+    </div>
+    {% else %}
+    <div id="chat-container" class="chat-container">
+        <div class="chat-header">
+            <h1>Chat com Assistente</h1>
+            <select id="assistant-select">
+                {% for assistant in assistants %}
+                    <option value="{{ assistant.id }}">{{ assistant.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div id="chat-window" class="chat-window"></div>
+        <div class="chat-input">
+            <input type="text" id="user-input" placeholder="Digite sua mensagem...">
+            <button id="send-button">Enviar</button>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- JavaScript -->
+    <script>
+        {% if 'api_key' not in session %}
+        const apiKeyInput = document.getElementById('api-key-input');
+        const apiKeyButton = document.getElementById('api-key-button');
+
+        apiKeyButton.addEventListener('click', () => {
+            const apiKey = apiKeyInput.value.trim();
+            if (apiKey) {
+                fetch('/set_api_key', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ api_key: apiKey })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // Recarrega a página para carregar os assistentes
+                        window.location.reload();
+                    } else {
+                        alert('Falha ao definir a API key: ' + data.message);
+                    }
+                })
+                .catch(error => {
+                    console.error('Erro:', error);
+                    alert('Erro ao definir a API key.');
+                });
+            } else {
+                alert('Por favor, insira sua OpenAI API Key.');
+            }
+        });
+        {% else %}
+        const chatWindow = document.getElementById('chat-window');
+        const userInput = document.getElementById('user-input');
+        const sendButton = document.getElementById('send-button');
+        const assistantSelect = document.getElementById('assistant-select');
+
+        sendButton.addEventListener('click', sendMessage);
+        userInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+
+        function sendMessage() {
+            const assistantId = assistantSelect.value;
+            const message = userInput.value.trim();
+
+            if (message) {
+                // Adiciona a mensagem do usuário ao chat
+                const userMessage = document.createElement('div');
+                userMessage.className = 'chat-message user-message';
+                userMessage.textContent = message;
+                chatWindow.appendChild(userMessage);
+                chatWindow.scrollTop = chatWindow.scrollHeight;
+
+                // Limpa o campo de entrada
+                userInput.value = '';
+
+                // Exibe indicador de carregamento
+                const loadingMessage = document.createElement('div');
+                loadingMessage.className = 'chat-message assistant-message loading';
+                loadingMessage.textContent = 'Assistente está digitando...';
+                chatWindow.appendChild(loadingMessage);
+                chatWindow.scrollTop = chatWindow.scrollHeight;
+
+                // Envia a mensagem ao servidor
+                fetch('/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ assistant_id: assistantId, message: message })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    // Remove o indicador de carregamento
+                    chatWindow.removeChild(loadingMessage);
+
+                    if (data.response) {
+                        // Processa a resposta do assistente como markdown e sanitiza o HTML
+                        const assistantMessage = document.createElement('div');
+                        assistantMessage.className = 'chat-message assistant-message';
+
+                        // Converte markdown para HTML
+                        const markdownHtml = marked.parse(data.response);
+                        // Sanitiza o HTML para prevenir XSS
+                        assistantMessage.innerHTML = DOMPurify.sanitize(markdownHtml);
+
+                        chatWindow.appendChild(assistantMessage);
+                        chatWindow.scrollTop = chatWindow.scrollHeight;
+                    } else if (data.error) {
+                        // Exibe a mensagem de erro
+                        alert('Erro: ' + data.error);
+                    }
+                })
+                .catch(error => {
+                    console.error('Erro:', error);
+                    chatWindow.removeChild(loadingMessage);
+                    alert('Erro ao enviar mensagem. Por favor, tente novamente.');
+                });
+            }
+        }
+        {% endif %}
+    </script>
+</body>
+</html>
