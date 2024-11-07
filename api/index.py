@@ -1,9 +1,10 @@
 from flask import Flask, request, render_template, jsonify, session
 from openai import OpenAI
 import time
+import secrets  # Importa o módulo secrets para gerar a secret_key
 
 app = Flask(__name__, static_folder='../static', template_folder='../templates')
-app.secret_key = 'sua_chave_secreta'  # Substitua por uma chave secreta segura
+app.secret_key = secrets.token_hex(16)  # Gera uma secret_key segura
 
 # Função para listar os assistentes existentes com nomes e IDs
 def get_assistants():
@@ -22,47 +23,54 @@ def get_assistants():
 # Funções auxiliares que usam o cliente OpenAI
 def create_thread(client):
     try:
-        return client.beta.threads.create()
+        thread = client.beta.threads.create()
+        print(f"Thread criada: {thread.id}")  # Debug
+        return thread.id
     except Exception as e:
         print(f"Erro ao criar um tópico: {e}")
         return None
 
-def send_message(client, thread, user_message):
+def send_message(client, thread_id, user_message):
     try:
         client.beta.threads.messages.create(
-            thread_id=thread.id, role="user", content=user_message
+            thread_id=thread_id, role="user", content=user_message
         )
+        print(f"Mensagem enviada para thread {thread_id}")  # Debug
         return True
     except Exception as e:
         print(f"Erro ao enviar mensagem: {e}")
         return False
 
-def run_thread(client, thread, assistant_id):
+def run_thread(client, thread_id, assistant_id):
     try:
-        return client.beta.threads.runs.create(
-            thread_id=thread.id,
+        run = client.beta.threads.runs.create(
+            thread_id=thread_id,
             assistant_id=assistant_id,
         )
+        print(f"Thread {thread_id} executada com assistant_id {assistant_id}")  # Debug
+        return run
     except Exception as e:
         print(f"Erro ao executar o tópico: {e}")
         return None
 
-def get_response(client, thread):
+def get_response(client, thread_id):
     try:
-        response = client.beta.threads.messages.list(thread_id=thread.id, order="asc")
+        response = client.beta.threads.messages.list(thread_id=thread_id, order="asc")
         return response
     except Exception as e:
         print(f"Erro ao obter resposta: {e}")
         return None
 
 def get_assistant_reply(messages):
-    for message in messages.data:
+    # Percorre as mensagens em ordem reversa para obter a resposta mais recente
+    for message in reversed(messages.data):
         if message.role == 'assistant':
             content_blocks = message.content
             for block in content_blocks:
                 if block.type == 'text':
                     text = block.text.value
-                    return text  # Retorna o primeiro texto de resposta do assistente
+                    print(f"Resposta do assistente encontrada: {text}")  # Debug
+                    return text  # Retorna o texto da mensagem mais recente do assistente
     return None
 
 @app.route('/')
@@ -81,6 +89,10 @@ def set_api_key():
     api_key = data.get('api_key')
     if api_key:
         session['api_key'] = api_key
+        # Limpa a thread_id e assistant_id ao definir uma nova API key
+        session.pop('thread_id', None)
+        session.pop('assistant_id', None)
+        print("API key definida. Sessão atualizada.")  # Debug
         return jsonify({'success': True})
     else:
         return jsonify({'success': False, 'message': 'Chave da API ausente'}), 400
@@ -101,29 +113,61 @@ def chat():
     if not assistant_id or not user_message:
         return jsonify({'error': 'Parâmetros inválidos'}), 400
 
-    resposta = None  # Inicializa a resposta
+    # Armazena o assistant_id na sessão se ainda não estiver lá
+    if 'assistant_id' not in session:
+        session['assistant_id'] = assistant_id
+        print(f"assistant_id definido na sessão: {assistant_id}")  # Debug
+    else:
+        # Verifica se o assistant_id mudou e reinicia a thread se necessário
+        if session['assistant_id'] != assistant_id:
+            session['assistant_id'] = assistant_id
+            session.pop('thread_id', None)
+            print(f"assistant_id mudou. thread_id reiniciado.")  # Debug
 
-    for attempt in range(3):  # Tenta até 3 vezes
-        print(f"Tentativa {attempt + 1} de 3")
+    # Recupera ou cria a thread
+    thread_id = session.get('thread_id')
+    if not thread_id:
         # Criar um novo tópico
-        thread = create_thread(client)
-        if not thread:
-            continue  # Se falhar ao criar o tópico, tenta novamente
+        thread_id = create_thread(client)
+        if not thread_id:
+            return jsonify({'error': 'Não foi possível criar um novo tópico.'}), 500
+        session['thread_id'] = thread_id  # Armazena o thread_id na sessão
+        print(f"thread_id armazenado na sessão: {thread_id}")  # Debug
+    else:
+        print(f"thread_id recuperado da sessão: {thread_id}")  # Debug
+        # Verifica se a thread ainda é válida
+        try:
+            client.beta.threads.retrieve(thread_id=thread_id)
+        except Exception as e:
+            print(f"Thread inválida ou expirada: {e}")
+            # Criar um novo tópico se a anterior não for válida
+            thread_id = create_thread(client)
+            if not thread_id:
+                return jsonify({'error': 'Não foi possível criar um novo tópico.'}), 500
+            session['thread_id'] = thread_id  # Atualiza o thread_id na sessão
+            print(f"thread_id atualizado na sessão: {thread_id}")  # Debug
 
-        # Enviar mensagem ao tópico
-        if not send_message(client, thread, user_message):
-            continue  # Se falhar ao enviar a mensagem, tenta novamente
+    # Enviar mensagem ao tópico
+    if not send_message(client, thread_id, user_message):
+        return jsonify({'error': 'Não foi possível enviar a mensagem.'}), 500
 
-        # Executar o tópico com o assistente
-        run_response = run_thread(client, thread, assistant_id)
-        if not run_response:
-            continue  # Se falhar ao executar o tópico, tenta novamente
+    # Executar o tópico com o assistente
+    run_response = run_thread(client, thread_id, session['assistant_id'])
+    if not run_response:
+        return jsonify({'error': 'Não foi possível executar o tópico.'}), 500
 
-        # Aguardar um tempo para o assistente processar a mensagem
-        time.sleep(5)
+    # Aguardar a resposta com polling
+    max_wait_time = 60  # Aumenta o tempo máximo de espera para 60 segundos
+    poll_interval = 5   # Intervalo entre as verificações em segundos
+    total_waited = 0
+    resposta_suja = None
+
+    while total_waited < max_wait_time:
+        time.sleep(poll_interval)
+        total_waited += poll_interval
 
         # Obter a resposta
-        resposta_suja = get_response(client, thread)
+        resposta_suja = get_response(client, thread_id)
         if not resposta_suja:
             continue  # Se falhar ao obter a resposta, tenta novamente
 
