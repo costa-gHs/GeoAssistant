@@ -9,7 +9,7 @@ admin_routes_bp = Blueprint('admin_routes', __name__)
 def dashboard():
     if not session.get('is_admin'):
         return redirect(url_for('login'))
-    return render_template('admin/dashboard.html')
+    return render_template('dashboard.html')
 
 # Gerenciamento de usuários
 @admin_routes_bp.route('/usuarios', methods=['GET', 'POST'])
@@ -34,7 +34,7 @@ def listar_usuarios():
             return jsonify({'error': f'Erro ao adicionar usuário: {e}'}), 400
 
     usuarios = Usuario.query.all()
-    return render_template('admin/usuarios.html', usuarios=usuarios)
+    return render_template('usuarios.html', usuarios=usuarios)
 
 
 @admin_routes_bp.route('/usuarios/excluir/<int:usuario_id>', methods=['POST'])
@@ -61,7 +61,7 @@ def listar_conversas():
         return jsonify({'error': 'Acesso negado.'}), 403
 
     conversas = Conversa.query.join(Usuario).all()  # Inclui o relacionamento com o usuário
-    return render_template('admin/conversas.html', conversas=conversas)
+    return render_template('conversas.html', conversas=conversas)
 
 
 @admin_routes_bp.route('/conversas/excluir/<int:conversa_id>', methods=['POST'])
@@ -85,7 +85,7 @@ def listar_mensagens(conversa_id):
     conversa = Conversa.query.get_or_404(conversa_id)
     mensagens = Mensagem.query.filter_by(id_conversa=conversa_id).all()
     return render_template(
-        'admin/mensagens.html',
+        'mensagens.html',
         mensagens=mensagens,
         conversa_id=conversa_id,
         usuario_nome=conversa.usuario.nome  # Passa o nome do usuário
