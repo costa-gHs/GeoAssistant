@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login</title>
+    <style>
+        /* Estilo geral */
+        body {
+            font-family: 'Arial', sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            background: linear-gradient(135deg, #003bff, #3f8cff);
+        }
+
+        .login-container {
+            background: #ffffff;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+            width: 100%;
+            max-width: 350px;
+            text-align: center;
+        }
+
+        .login-container h1 {
+            font-size: 1.8rem;
+            color: #003bff;
+            margin-bottom: 1rem;
+        }
+
+        .login-container form {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .login-container label {
+            font-size: 0.9rem;
+            color: #555;
+            text-align: left;
+        }
+
+        .login-container input {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 1rem;
+            box-sizing: border-box;
+        }
+
+        .login-container input:focus {
+            border-color: #6e8efb;
+            outline: none;
+            box-shadow: 0 0 4px rgba(110, 142, 251, 0.4);
+        }
+
+        .login-container button {
+            padding: 0.75rem;
+            font-size: 1rem;
+            font-weight: bold;
+            border: none;
+            border-radius: 5px;
+            background: linear-gradient(135deg, #003bff, #3f8cff);
+            color: #fff;
+            cursor: pointer;
+            transition: background 0.3s ease;
+        }
+
+        .login-container button:hover {
+            background: #002d99;
+        }
+
+        .login-container .footer {
+            margin-top: 1rem;
+            font-size: 0.9rem;
+            color: #777;
+        }
+
+        .login-container .footer a {
+            color: #003bff;
+            text-decoration: none;
+        }
+
+        .login-container .footer a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <h1>Login</h1>
+        {% if error %}
+            <p style="color: red; font-size: 0.9rem;">{{ error }}</p>
+        {% endif %}
+        <form method="POST" action="{{ url_for('login') }}">
+            <label for="nome">Nome:</label>
+            <input type="text" id="nome" name="nome" placeholder="Digite seu nome" required>
+
+            <label for="senha">Senha:</label>
+            <input type="password" id="senha" name="senha" placeholder="Digite sua senha" required>
+
+            <label for="api_key">OpenAI API Key:</label>
+            <input type="password" id="api_key" name="api_key" placeholder="Digite sua API Key" required>
+
+            <button type="submit">Entrar</button>
+        </form>
+        <div class="footer">
+            <p>Esqueceu sua senha? <a href="#">Recuperar aqui</a></p>
+        </div>
+    </div>
+</body>
+</html>

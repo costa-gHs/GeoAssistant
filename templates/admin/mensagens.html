@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Mensagens da Conversa</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='admin_styles.css') }}">
+    <!-- Inclua as bibliotecas necessárias -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@2.4.0/dist/purify.min.js"></script>
+</head>
+<body>
+    <!-- Header atualizado -->
+    <header>
+        <h1>Administração</h1>
+        <nav>
+            <ul>
+                <li><a href="{{ url_for('index') }}">Chat</a></li>
+                <li><a href="{{ url_for('admin_routes.dashboard') }}">Dashboard</a></li>
+                <li><a href="{{ url_for('admin_routes.listar_usuarios') }}">Usuários</a></li>
+                <li><a href="{{ url_for('admin_routes.listar_conversas') }}">Conversas</a></li>
+                <li><a href="{{ url_for('logout') }}">Logout</a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        <h2>Mensagens da Conversa {{ conversa_id }}</h2>
+        <div class="mensagens-container">
+            {% for mensagem in mensagens %}
+            <div class="mensagem-card">
+                <div class="mensagem-header">
+                    <strong>ID:</strong> {{ mensagem.id }}
+                    <span class="mensagem-data">{{ mensagem.data_hora_envio.strftime('%d/%m/%Y %H:%M') }}</span>
+                </div>
+                <div class="mensagem-conteudo">
+                    <!-- Mensagem do usuário -->
+                    <div class="chat-message user-message">
+                        <span class="markdown-content">{{ mensagem.texto_usuario }}</span>
+                    </div>
+                    <!-- Mensagem do GPT -->
+                    <div class="chat-message assistant-message">
+                        <span class="markdown-content">{{ mensagem.texto_gpt }}</span>
+                    </div>
+                </div>
+                <form action="{{ url_for('admin_routes.excluir_mensagem', mensagem_id=mensagem.id) }}" method="post">
+                    <button type="submit">Excluir</button>
+                </form>
+            </div>
+            {% endfor %}
+        </div>
+    </main>
+
+    <!-- Script para renderizar o Markdown -->
+    <script>
+        // Seleciona todos os elementos que contêm conteúdo em Markdown
+        const markdownElements = document.querySelectorAll('.markdown-content');
+
+        markdownElements.forEach(element => {
+            const rawText = element.textContent;
+            const html = DOMPurify.sanitize(marked.parse(rawText));
+            element.innerHTML = html;
+        });
+    </script>
+</body>
+</html>

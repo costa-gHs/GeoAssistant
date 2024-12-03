@@ -2,10 +2,9 @@
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Chat com Assistente</title>
-    <!-- Inclua o arquivo CSS -->
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
-    <!-- Inclua o marked.js e o DOMPurify -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/dompurify@2.4.0/dist/purify.min.js"></script>
 </head>
@@ -17,24 +16,49 @@
         <button id="api-key-button">Enviar</button>
     </div>
     {% else %}
-    <div id="chat-container" class="chat-container">
-        <div class="chat-header">
-            <h1>Chat com Assistente</h1>
-            <select id="assistant-select">
-                {% for assistant in assistants %}
-                    <option value="{{ assistant.id }}">{{ assistant.name }}</option>
+    <div id="app-container">
+        <!-- Sidebar para o histórico de conversas -->
+        <aside class="sidebar">
+            <h2>Histórico de Conversas</h2>
+            <ul id="conversa-list">
+                {% for conversa in historico %}
+                    <li data-conversa-id="{{ conversa.conversa_id }}" class="conversa-item">
+                        Iniciada em: {{ conversa.data_inicio.strftime('%d/%m/%Y %H:%M') }}
+                    </li>
+                {% else %}
+                    <li>Nenhuma conversa anterior</li>
                 {% endfor %}
-            </select>
-        </div>
-        <div id="chat-window" class="chat-window"></div>
-        <div class="chat-input">
-            <input type="text" id="user-input" placeholder="Digite sua mensagem...">
-            <button id="send-button">Enviar</button>
+            </ul>
+        </aside>
+
+        <!-- Container principal do chat -->
+        <div id="chat-container" class="chat-container">
+            <header class="chat-header">
+                <div class="header-left">
+                    <h1>Bem-vindo, {{ usuario_nome }}! (ID: {{ usuario_id }})</h1>
+                </div>
+                <div class="header-right">
+                    <select id="assistant-select">
+                        {% for assistant in assistants %}
+                            <option value="{{ assistant.id }}">{{ assistant.name }}</option>
+                        {% endfor %}
+                    </select>
+                    <button id="new-conversation-button">Iniciar Nova Conversa</button>
+                    {% if is_admin %}
+                        <a href="{{ url_for('admin_routes.dashboard') }}" class="admin-button">Administração</a>
+                    {% endif %}
+                    <a href="{{ url_for('logout') }}" class="logout-button">Logout</a>
+                </div>
+            </header>
+            <main id="chat-window" class="chat-window"></main>
+            <footer class="chat-input">
+                <input type="text" id="user-input" placeholder="Digite sua mensagem...">
+                <button id="send-button">Enviar</button>
+            </footer>
         </div>
     </div>
     {% endif %}
 
-    <!-- JavaScript -->
     <script>
         {% if 'api_key' not in session %}
         const apiKeyInput = document.getElementById('api-key-input');
@@ -53,7 +77,6 @@
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
-                        // Recarrega a página para carregar os assistentes
                         window.location.reload();
                     } else {
                         alert('Falha ao definir a API key: ' + data.message);
@@ -72,7 +95,112 @@
         const userInput = document.getElementById('user-input');
         const sendButton = document.getElementById('send-button');
         const assistantSelect = document.getElementById('assistant-select');
+        const conversaItems = document.querySelectorAll('.conversa-item');
 
+        function loadConversa(conversaId) {
+            fetch(`/conversa/${conversaId}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        alert('Erro: ' + data.error);
+                        return;
+                    }
+
+                    chatWindow.innerHTML = '';
+
+                    // Armazena o thread_id e conversa_id no sessionStorage
+                    sessionStorage.setItem('thread_id', data.thread_id);
+                    sessionStorage.setItem('conversa_id', conversaId);
+
+                    // Exibe as mensagens
+                    data.mensagens.forEach(mensagem => {
+                        // Mensagem do usuário
+                        const userMessage = document.createElement('div');
+                        userMessage.className = 'chat-message user-message';
+                        userMessage.textContent = mensagem.usuario;
+                        chatWindow.appendChild(userMessage);
+
+                        // Mensagem do assistente
+                        const assistantMessage = document.createElement('div');
+                        assistantMessage.className = 'chat-message assistant-message';
+                        assistantMessage.innerHTML = DOMPurify.sanitize(marked.parse(mensagem.gpt));
+                        chatWindow.appendChild(assistantMessage);
+                    });
+
+                    chatWindow.scrollTop = chatWindow.scrollHeight;
+                })
+                .catch(error => {
+                    console.error('Erro ao carregar conversa:', error);
+                });
+        }
+
+
+
+
+        function sendMessage() {
+            const assistantId = assistantSelect.value;
+            const message = userInput.value.trim();
+            let conversaId = sessionStorage.getItem('conversa_id'); // Recupera o conversa_id
+            const threadId = sessionStorage.getItem('thread_id'); // Recupera o thread_id (se existir)
+
+            if (message) {
+                // Exibe a mensagem do usuário
+                const userMessage = document.createElement('div');
+                userMessage.className = 'chat-message user-message';
+                userMessage.textContent = message;
+                chatWindow.appendChild(userMessage);
+                chatWindow.scrollTop = chatWindow.scrollHeight;
+
+                userInput.value = '';
+
+                // Exibe o indicador de carregamento
+                const loadingMessage = document.createElement('div');
+                loadingMessage.className = 'chat-message assistant-message loading';
+                loadingMessage.textContent = 'Assistente está digitando...';
+                chatWindow.appendChild(loadingMessage);
+                chatWindow.scrollTop = chatWindow.scrollHeight;
+
+                // Envia a mensagem para o servidor
+                fetch('/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ assistant_id: assistantId, message: message, thread_id: threadId, conversa_id: conversaId })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    chatWindow.removeChild(loadingMessage);
+
+                    if (data.response) {
+                        // Atualiza o conversa_id no sessionStorage, caso uma nova conversa tenha sido criada
+                        if (data.conversa_id) {
+                            sessionStorage.setItem('conversa_id', data.conversa_id);
+                        }
+
+                        const assistantMessage = document.createElement('div');
+                        assistantMessage.className = 'chat-message assistant-message';
+                        assistantMessage.innerHTML = DOMPurify.sanitize(marked.parse(data.response));
+                        chatWindow.appendChild(assistantMessage);
+                        chatWindow.scrollTop = chatWindow.scrollHeight;
+                    } else if (data.error) {
+                        alert('Erro: ' + data.error);
+                    }
+                })
+                .catch(error => {
+                    console.error('Erro ao enviar mensagem:', error);
+                    chatWindow.removeChild(loadingMessage);
+                    alert('Erro ao enviar mensagem. Por favor, tente novamente.');
+                });
+            }
+        }
+
+
+
+
+
+
+        // Adicionar evento para enviar ao clicar no botão ou pressionar Enter
         sendButton.addEventListener('click', sendMessage);
         userInput.addEventListener('keypress', function(e) {
             if (e.key === 'Enter') {
@@ -80,66 +208,47 @@
             }
         });
 
-        function sendMessage() {
-            const assistantId = assistantSelect.value;
-            const message = userInput.value.trim();
+        const newConversationButton = document.getElementById('new-conversation-button');
 
-            if (message) {
-                // Adiciona a mensagem do usuário ao chat
-                const userMessage = document.createElement('div');
-                userMessage.className = 'chat-message user-message';
-                userMessage.textContent = message;
-                chatWindow.appendChild(userMessage);
-                chatWindow.scrollTop = chatWindow.scrollHeight;
-
-                // Limpa o campo de entrada
-                userInput.value = '';
-
-                // Exibe indicador de carregamento
-                const loadingMessage = document.createElement('div');
-                loadingMessage.className = 'chat-message assistant-message loading';
-                loadingMessage.textContent = 'Assistente está digitando...';
-                chatWindow.appendChild(loadingMessage);
-                chatWindow.scrollTop = chatWindow.scrollHeight;
-
-                // Envia a mensagem ao servidor
-                fetch('/chat', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ assistant_id: assistantId, message: message })
-                })
+        newConversationButton.addEventListener('click', () => {
+            fetch('/nova_conversa', { method: 'POST' })
                 .then(response => response.json())
                 .then(data => {
-                    // Remove o indicador de carregamento
-                    chatWindow.removeChild(loadingMessage);
+                    if (data.success) {
+                        chatWindow.innerHTML = '';  // Limpa o chat para a nova conversa
 
-                    if (data.response) {
-                        // Processa a resposta do assistente como markdown e sanitiza o HTML
-                        const assistantMessage = document.createElement('div');
-                        assistantMessage.className = 'chat-message assistant-message';
+                        const conversaList = document.getElementById('conversa-list');
+                        const newConversaItem = document.createElement('li');
+                        newConversaItem.className = 'conversa-item';
+                        newConversaItem.setAttribute('data-conversa-id', data.conversa_id);
+                        newConversaItem.textContent = `Iniciada em: ${data.data_inicio}`;
 
-                        // Converte markdown para HTML
-                        const markdownHtml = marked.parse(data.response);
-                        // Sanitiza o HTML para prevenir XSS
-                        assistantMessage.innerHTML = DOMPurify.sanitize(markdownHtml);
+                        newConversaItem.addEventListener('click', () => loadConversa(data.conversa_id));
 
-                        chatWindow.appendChild(assistantMessage);
-                        chatWindow.scrollTop = chatWindow.scrollHeight;
-                    } else if (data.error) {
-                        // Exibe a mensagem de erro
-                        alert('Erro: ' + data.error);
+                        conversaList.appendChild(newConversaItem);
+
+                        sessionStorage.removeItem('conversa_id');
+                        sessionStorage.removeItem('thread_id');
+                    } else {
+                        alert('Erro ao iniciar nova conversa: ' + data.error);
                     }
                 })
                 .catch(error => {
-                    console.error('Erro:', error);
-                    chatWindow.removeChild(loadingMessage);
-                    alert('Erro ao enviar mensagem. Por favor, tente novamente.');
+                    console.error('Erro ao iniciar nova conversa:', error);
                 });
-            }
-        }
+        });
+
+
+        document.querySelectorAll('.conversa-item').forEach(item => {
+            item.addEventListener('click', () => {
+                const conversaId = item.getAttribute('data-conversa-id');
+                loadConversa(conversaId);
+            });
+        });
+
+
         {% endif %}
+
     </script>
 </body>
 </html>

@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Admin Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='admin_styles.css') }}">
+</head>
+<body>
+    <!-- Header atualizado -->
+    <header>
+        <h1>Administração</h1>
+        <nav>
+            <ul>
+                <li><a href="{{ url_for('index') }}">Chat</a></li>
+                <li><a href="{{ url_for('admin_routes.dashboard') }}">Dashboard</a></li>
+                <li><a href="{{ url_for('admin_routes.listar_usuarios') }}">Usuários</a></li>
+                <li><a href="{{ url_for('admin_routes.listar_conversas') }}">Conversas</a></li>
+                <li><a href="{{ url_for('logout') }}">Logout</a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        <h2>Bem-vindo, {{ session['usuario_nome'] }}</h2>
+        <p>Use o menu para gerenciar o sistema.</p>
+    </main>
+</body>
+</html>

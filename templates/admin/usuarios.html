@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Administração de Usuários</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='admin_styles.css') }}">
+</head>
+<body>
+    <!-- Header atualizado -->
+    <header>
+        <h1>Administração</h1>
+        <nav>
+            <ul>
+                <li><a href="{{ url_for('index') }}">Chat</a></li>
+                <li><a href="{{ url_for('admin_routes.dashboard') }}">Dashboard</a></li>
+                <li><a href="{{ url_for('admin_routes.listar_usuarios') }}">Usuários</a></li>
+                <li><a href="{{ url_for('admin_routes.listar_conversas') }}">Conversas</a></li>
+                <li><a href="{{ url_for('logout') }}">Logout</a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        <h2>Administração de Usuários</h2>
+        {% with messages = get_flashed_messages() %}
+            {% if messages %}
+                <div class="feedback">
+                    {% for message in messages %}
+                        <p>{{ message }}</p>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Nome</th>
+                    <th>Administrador</th>
+                    <th>Último Login</th>
+                    <th>Ações</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for usuario in usuarios %}
+                <tr>
+                    <td>{{ usuario.id }}</td>
+                    <td>{{ usuario.nome }}</td>
+                    <td>{{ 'Sim' if usuario.is_admin else 'Não' }}</td>
+                    <td>{{ usuario.data_ultimo_login or 'Nunca' }}</td>
+                    <td>
+                        <a href="{{ url_for('admin_routes.listar_conversas', usuario_id=usuario.id) }}" class="button">Ver Conversas</a>
+                        <form action="{{ url_for('admin_routes.excluir_usuario', usuario_id=usuario.id) }}" method="post" style="display:inline;">
+                            <button type="submit">Excluir</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </main>
+</body>
+</html>

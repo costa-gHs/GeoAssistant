@@ -2,3 +2,5 @@ Flask
 openai
 requests
 python-dotenv
+bcrypt
+flask_sqlalchemy
