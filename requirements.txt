@@ -4,3 +4,6 @@ requests
 python-dotenv
 bcrypt
 flask_sqlalchemy
+psycopg2-binary
+supabase
+asyncpg

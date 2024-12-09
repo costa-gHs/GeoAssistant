@@ -2,6 +2,7 @@ from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 import bcrypt
+from supabase_client import supabase, hash_senha
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///usuarios.db'
@@ -51,63 +52,69 @@ def inicializar_db():
         print("Banco de dados criado com sucesso!")
 
 
-# Funções de manipulação de dados
 def adicionar_usuario():
     nome = input("Digite o nome do usuário: ")
     senha = input("Digite a senha: ")
     is_admin = input("O usuário é administrador? (s/n): ").lower() == 's'
-    senha_criptografada = bcrypt.hashpw(senha.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-
-    novo_usuario = Usuario(nome=nome, senha=senha_criptografada, data_ultimo_login=datetime.now(), is_admin=is_admin)
-    db.session.add(novo_usuario)
-    db.session.commit()
-    print(f"Usuário '{nome}' adicionado com sucesso!")
-
+    senha_criptografada = bcrypt.hashpw(senha.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    """Cria um novo usuário no Supabase."""
+    senha_hash = hash_senha(senha)
+    try:
+        supabase.table("usuarios").insert({
+            "nome": nome,
+            "senha": senha_hash,
+            "is_admin": is_admin,
+            "data_ultimo_login": None
+        }).execute()
+        print(f"Usuário '{nome}' criado com sucesso!")
+    except Exception as e:
+        print(f"Erro ao criar usuário: {e}")
 
 def visualizar_usuarios():
-    usuarios = Usuario.query.all()
-    print("Usuários cadastrados:")
-    for usuario in usuarios:
-        print(
-            f"ID: {usuario.id} | Nome: {usuario.nome} | Admin: {'Sim' if usuario.is_admin else 'Não'} | Último login: {usuario.data_ultimo_login}")
-
+    try:
+        response = supabase.table("usuarios").select("*").execute()
+        usuarios = response.data
+        print("Usuários cadastrados:")
+        for usuario in usuarios:
+            print(
+                f"ID: {usuario['id']} | Nome: {usuario['nome']} | Admin: {'Sim' if usuario['is_admin'] else 'Não'} | Último login: {usuario['data_ultimo_login']}"
+            )
+    except Exception as e:
+        print(f"Erro ao listar usuários: {e}")
 
 def excluir_usuario():
     visualizar_usuarios()
     usuario_id = int(input("Digite o ID do usuário que deseja excluir: "))
-    usuario = Usuario.query.get(usuario_id)
-    if usuario:
-        db.session.delete(usuario)
-        db.session.commit()
+    try:
+        supabase.table("usuarios").delete().eq("id", usuario_id).execute()
         print("Usuário excluído com sucesso!")
-    else:
-        print("Usuário não encontrado.")
-
+    except Exception as e:
+        print(f"Erro ao excluir usuário: {e}")
 
 def visualizar_conversas_usuario():
     usuario_id = int(input("Digite o ID do usuário para ver as conversas: "))
-    conversas = Conversa.query.filter_by(id_usuario=usuario_id).all()
-    if conversas:
-        for conversa in conversas:
-            print(
-                f"Conversa ID: {conversa.id} | Data de Início: {conversa.data_inicio} | Thread ID: {conversa.thread_id}")
-    else:
-        print("Nenhuma conversa encontrada para este usuário.")
-
+    try:
+        response = supabase.table("conversas").select("*").eq("id_usuario", usuario_id).execute()
+        conversas = response.data
+        if conversas:
+            for conversa in conversas:
+                print(
+                    f"Conversa ID: {conversa['id']} | Data de Início: {conversa['data_inicio']} | Thread ID: {conversa['thread_id']}"
+                )
+        else:
+            print("Nenhuma conversa encontrada para este usuário.")
+    except Exception as e:
+        print(f"Erro ao listar conversas: {e}")
 
 def excluir_conversa():
     visualizar_conversas_usuario()
     conversa_id = int(input("Digite o ID da conversa que deseja excluir: "))
-    conversa = Conversa.query.get(conversa_id)
-    if conversa:
-        db.session.delete(conversa)
-        db.session.commit()
+    try:
+        supabase.table("conversas").delete().eq("id", conversa_id).execute()
         print("Conversa excluída com sucesso!")
-    else:
-        print("Conversa não encontrada.")
+    except Exception as e:
+        print(f"Erro ao excluir conversa: {e}")
 
-
-# Menu interativo
 def menu():
     print("\n--- Menu de Gerenciamento de Banco de Dados ---")
     print("1. Adicionar novo usuário")
@@ -135,8 +142,9 @@ def menu():
         else:
             print("Opção inválida. Tente novamente.")
 
-
-if __name__ == '__main__':
-    with app.app_context():
-        inicializar_db()
-        menu()
+with app.app_context():
+    db.create_all()
+    # Inserir usuário inicial (opcional)
+    admin = Usuario(nome="Dev-henrique", senha="123412341234", is_admin=True)
+    db.session.add(admin)
+    db.session.commit()

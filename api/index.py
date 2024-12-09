@@ -7,12 +7,16 @@ import bcrypt
 from api.admin_routes import admin_routes_bp  # Novo nome do Blueprint
 from api.database import db, Usuario, Conversa, Mensagem  # Importa db e modelos
 from datetime import datetime as dt
+from supabase_client import supabase, verificar_senha
+import datetime
 
 app = Flask(__name__, static_folder='../static', template_folder='../templates')
 app.secret_key = secrets.token_hex(16)
 
+app.instance_path = '/tmp'
+
 # Configuração do banco de dados
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///usuarios.db'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:////tmp/usuarios.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db.init_app(app)
 
@@ -21,31 +25,57 @@ app.register_blueprint(admin_routes_bp, url_prefix='/admin')  # Rotas administra
 
 # Funções auxiliares
 def iniciar_conversa(usuario_id):
-    nova_conversa = Conversa(id_usuario=usuario_id)
-    db.session.add(nova_conversa)
-    db.session.commit()
-    return nova_conversa
+    try:
+        response = supabase.table("conversas").insert({
+            "id_usuario": usuario_id,
+            "data_inicio": datetime.datetime.now().isoformat()  # Sempre ISO8601
+        }).execute()
+        return response.data[0] if response.data else None
+    except Exception as e:
+        print(f"Erro ao iniciar conversa: {e}")
+        return None
+
+
+
 
 def salvar_mensagem(id_conversa, texto_usuario, texto_gpt):
-    nova_mensagem = Mensagem(
-        id_conversa=id_conversa,
-        texto_usuario=texto_usuario,
-        texto_gpt=texto_gpt
-    )
-    db.session.add(nova_mensagem)
-    db.session.commit()
+    try:
+        supabase.table("mensagens").insert({
+            "id_conversa": id_conversa,
+            "texto_usuario": texto_usuario,
+            "texto_gpt": texto_gpt,
+            "data_hora_envio": datetime.utcnow().isoformat()
+        }).execute()
+    except Exception as e:
+        print(f"Erro ao salvar mensagem: {e}")
+
+
 
 def carregar_historico(usuario_id):
-    conversas = Conversa.query.filter_by(id_usuario=usuario_id).all()
-    historico = []
-    for conversa in conversas:
-        mensagens = Mensagem.query.filter_by(id_conversa=conversa.id).all()
-        historico.append({
-            "conversa_id": conversa.id,
-            "data_inicio": conversa.data_inicio,
-            "mensagens": [{"usuario": m.texto_usuario, "gpt": m.texto_gpt, "data": m.data_hora_envio} for m in mensagens]
-        })
-    return historico
+    try:
+        conversas = supabase.table("conversas").select("*").eq("id_usuario", usuario_id).execute().data
+        historico = []
+        for conversa in conversas:
+            # Converte string ISO8601 para datetime
+            data_inicio = datetime.datetime.fromisoformat(conversa["data_inicio"])
+            mensagens = supabase.table("mensagens").select("*").eq("id_conversa", conversa["id"]).execute().data
+            historico.append({
+                "conversa_id": conversa["id"],
+                "data_inicio": data_inicio,  # Agora é um objeto datetime
+                "mensagens": [
+                    {
+                        "usuario": mensagem["texto_usuario"],
+                        "gpt": mensagem["texto_gpt"],
+                        "data": datetime.datetime.fromisoformat(mensagem["data_hora_envio"])
+                    }
+                    for mensagem in mensagens
+                ]
+            })
+        return historico
+    except Exception as e:
+        print(f"Erro ao carregar histórico: {e}")
+        return []
+
 
 # Função para listar os assistentes existentes com nomes e IDs
 def get_assistants():
@@ -143,29 +173,34 @@ def index():
 # Rota de login
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    if request.method == 'POST':
-        nome = request.form.get('nome')
-        senha = request.form.get('senha')
-        api_key = request.form.get('api_key')
+    if request.method == "POST":
+        nome = request.form.get("nome")
+        senha = request.form.get("senha")
+        api_key = request.form.get("api_key")
 
-        usuario = Usuario.query.filter_by(nome=nome).first()
+        try:
+            # Busca o usuário no Supabase
+            response = supabase.table("usuarios").select("*").eq("nome", nome).execute()
+            usuario = response.data[0] if response.data else None
 
-        if usuario and bcrypt.checkpw(senha.encode('utf-8'), usuario.senha.encode('utf-8')):
-            session['usuario_id'] = usuario.id
-            session['usuario_nome'] = usuario.nome
-            session['is_admin'] = usuario.is_admin  # Adiciona status de administrador à sessão
-            session['api_key'] = api_key
+            if usuario and verificar_senha(senha, usuario["senha"]):
+                # Sessão inicializada
+                session["usuario_id"] = usuario["id"]
+                session["usuario_nome"] = usuario["nome"]
+                session["is_admin"] = usuario["is_admin"]
+                session["api_key"] = api_key
 
-            usuario.data_ultimo_login = dt.now()
-            db.session.commit()
+                # Atualiza o último login
+                supabase.table("usuarios").update(
+                    {"data_ultimo_login": datetime.datetime.now().isoformat()}
+                ).eq("id", usuario["id"]).execute()
 
-            # Redireciona para o chat após login
-            return redirect(url_for('index'))
-
-        return render_template('login.html', error='Nome ou senha incorretos.')
-
-    return render_template('login.html')
-
+                return redirect(url_for("index"))
+            else:
+                return render_template("login.html", error="Usuário ou senha inválidos.")
+        except Exception as e:
+            return render_template("login.html", error=f"Erro: {e}")
+    return render_template("login.html")
 
 @app.route('/set_api_key', methods=['POST'])
 def set_api_key():
@@ -183,6 +218,8 @@ def set_api_key():
 # Função para enviar mensagem
 @app.route('/chat', methods=['POST'])
 def chat():
+    """Função para gerenciar interações de chat, criando conversas e manipulando threads."""
+    # Verifica se a API Key da OpenAI está na sessão
     if 'api_key' not in session:
         return jsonify({'error': 'Chave da API não definida'}), 400
 
@@ -194,105 +231,136 @@ def chat():
     user_message = data.get('message')
     conversa_id = data.get('conversa_id')  # Pode ser None
 
+    # Validação de entrada
     if not assistant_id or not user_message:
         return jsonify({'error': 'Parâmetros inválidos'}), 400
 
-    # Se não houver conversa_id, cria uma nova conversa
-    if not conversa_id:
-        usuario_id = session['usuario_id']
-        nova_conversa = iniciar_conversa(usuario_id)
-        conversa_id = nova_conversa.id
-        thread_id = create_thread(client)
-        if not thread_id:
-            return jsonify({'error': 'Erro ao criar uma nova thread.'}), 500
-        nova_conversa.thread_id = thread_id
-        db.session.commit()
-    else:
-        # Recupera conversa existente
-        conversa = db.session.get(Conversa, conversa_id)
-        if not conversa:
-            return jsonify({'error': 'Conversa não encontrada.'}), 404
-        thread_id = conversa.thread_id
+    try:
+        # Criação ou recuperação de uma conversa
+        if not conversa_id:
+            usuario_id = session['usuario_id']
 
-    # Garante que a thread_id existe
-    if not thread_id:
-        thread_id = create_thread(client)
-        if not thread_id:
-            return jsonify({'error': 'Erro ao criar uma nova thread.'}), 500
-        conversa.thread_id = thread_id
-        db.session.commit()
+            # Cria uma nova conversa no Supabase
+            nova_conversa_response = supabase.table("conversas").insert({
+                "id_usuario": usuario_id,
+                "data_inicio": datetime.datetime.now().isoformat()
+            }).execute()
+            nova_conversa = nova_conversa_response.data[0] if nova_conversa_response.data else None
+            if not nova_conversa:
+                raise ValueError("Erro ao criar nova conversa no Supabase.")
 
-    print(f"Usando thread_id: {thread_id}")
+            conversa_id = nova_conversa["id"]
 
-    # Envia mensagem e executa a thread
-    if not send_message(client, thread_id, user_message):
-        return jsonify({'error': 'Erro ao enviar a mensagem.'}), 500
+            # Cria uma nova thread no OpenAI
+            thread_id = create_thread(client)
+            if not thread_id:
+                return jsonify({'error': 'Erro ao criar uma nova thread.'}), 500
 
-    run_response = run_thread(client, thread_id, assistant_id)
-    if not run_response:
-        return jsonify({'error': 'Erro ao executar o tópico.'}), 500
+            # Atualiza a thread_id na conversa do Supabase
+            supabase.table("conversas").update({"thread_id": thread_id}).eq("id", conversa_id).execute()
+        else:
+            # Recupera a conversa existente do Supabase
+            conversa_response = supabase.table("conversas").select("*").eq("id", conversa_id).execute()
+            conversa = conversa_response.data[0] if conversa_response.data else None
+            if not conversa:
+                return jsonify({'error': 'Conversa não encontrada.'}), 404
 
-    # Polling para obter a resposta
-    max_wait_time = 60
-    poll_interval = 5
-    total_waited = 0
-    resposta = None
+            thread_id = conversa.get("thread_id")
+            if not thread_id:
+                # Cria uma nova thread se não existir
+                thread_id = create_thread(client)
+                if not thread_id:
+                    return jsonify({'error': 'Erro ao criar uma nova thread.'}), 500
+                supabase.table("conversas").update({"thread_id": thread_id}).eq("id", conversa_id).execute()
 
-    while total_waited < max_wait_time:
-        time.sleep(poll_interval)
-        total_waited += poll_interval
-        resposta_suja = get_response(client, thread_id)
-        if resposta_suja:
-            resposta = get_assistant_reply(resposta_suja)
-            if resposta:
-                break
+        print(f"Usando thread_id: {thread_id}")
 
-    if resposta:
-        salvar_mensagem(conversa_id, user_message, resposta)
-        return jsonify({'response': resposta, 'conversa_id': conversa_id})
-    else:
-        return jsonify({'error': 'Não foi possível obter uma resposta do assistente.'}), 500
+        # Envia mensagem para a thread
+        if not send_message(client, thread_id, user_message):
+            return jsonify({'error': 'Erro ao enviar a mensagem.'}), 500
 
+        # Executa a thread
+        run_response = run_thread(client, thread_id, assistant_id)
+        if not run_response:
+            return jsonify({'error': 'Erro ao executar o tópico.'}), 500
+
+        # Polling para obter a resposta
+        max_wait_time = 60
+        poll_interval = 5
+        total_waited = 0
+        resposta = None
+
+        while total_waited < max_wait_time:
+            time.sleep(poll_interval)
+            total_waited += poll_interval
+            resposta_suja = get_response(client, thread_id)
+            if resposta_suja:
+                resposta = get_assistant_reply(resposta_suja)
+                if resposta:
+                    break
+
+        if resposta:
+            # Armazena a mensagem do usuário e a resposta no Supabase
+            supabase.table("mensagens").insert({
+                "id_conversa": conversa_id,
+                "texto_usuario": user_message,
+                "texto_gpt": resposta,
+                "data_hora_envio": datetime.datetime.now().isoformat()
+            }).execute()
+            return jsonify({'response': resposta, 'conversa_id': conversa_id})
+        else:
+            return jsonify({'error': 'Não foi possível obter uma resposta do assistente.'}), 500
+
+    except Exception as e:
+        return jsonify({'error': f'Erro ao processar o chat: {str(e)}'}), 500
 
 
 @app.route('/conversa/<int:conversa_id>')
 def get_conversa(conversa_id):
     usuario_id = session.get('usuario_id')
-    conversa = db.session.get(Conversa, conversa_id)
+    try:
+        # Busca conversa no Supabase
+        conversa_response = supabase.table("conversas").select("*").eq("id", conversa_id).execute()
+        conversa = conversa_response.data[0] if conversa_response.data else None
 
-    if not conversa or conversa.id_usuario != usuario_id:
-        return jsonify({'error': 'Conversa não encontrada ou não pertence ao usuário atual'}), 404
+        if not conversa or conversa["id_usuario"] != usuario_id:
+            return jsonify({'error': 'Conversa não encontrada ou não pertence ao usuário atual'}), 404
 
-    # Imprime o thread_id no terminal
-    print(f"Thread ID da conversa {conversa_id}: {conversa.thread_id}")
+        # Busca mensagens associadas
+        mensagens_response = supabase.table("mensagens").select("*").eq("id_conversa", conversa_id).execute()
+        mensagens = mensagens_response.data if mensagens_response.data else []
 
-    mensagens = Mensagem.query.filter_by(id_conversa=conversa.id).order_by(Mensagem.data_hora_envio.asc()).all()
+        mensagens_json = [
+            {
+                'usuario': mensagem["texto_usuario"],
+                'gpt': mensagem["texto_gpt"],
+                'data_hora_envio': datetime.datetime.fromisoformat(mensagem["data_hora_envio"]).strftime('%d/%m/%Y %H:%M')
+            }
+            for mensagem in mensagens
+        ]
 
-    mensagens_json = [
-        {
-            'usuario': mensagem.texto_usuario,
-            'gpt': mensagem.texto_gpt,
-            'data_hora_envio': mensagem.data_hora_envio.strftime('%d/%m/%Y %H:%M')
-        }
-        for mensagem in mensagens
-    ]
-
-    # Armazena o thread_id na sessão
-    session['thread_id'] = conversa.thread_id
-    session['conversa_id'] = conversa_id  # Garante que a conversa atual está na sessão
-
-    return jsonify({'mensagens': mensagens_json, 'thread_id': conversa.thread_id})
+        return jsonify({'mensagens': mensagens_json, 'thread_id': conversa.get("thread_id")})
+    except Exception as e:
+        return jsonify({'error': f'Erro ao carregar conversa: {str(e)}'}), 500
 
 
 @app.route('/nova_conversa', methods=['POST'])
 def nova_conversa():
-    nova_conversa = iniciar_conversa(session['usuario_id'])
-    session['conversa_id'] = nova_conversa.id
-    return jsonify({
-        'success': True,
-        'conversa_id': nova_conversa.id,
-        'data_inicio': nova_conversa.data_inicio.strftime('%d/%m/%Y %H:%M')
-    })
+    try:
+        nova_conversa = iniciar_conversa(session['usuario_id'])
+        if nova_conversa:
+            nova_conversa["data_inicio"] = datetime.datetime.fromisoformat(nova_conversa["data_inicio"])  # Conversão
+            session['conversa_id'] = nova_conversa["id"]
+            return jsonify({
+                'success': True,
+                'conversa_id': nova_conversa["id"],
+                'data_inicio': nova_conversa["data_inicio"].strftime('%d/%m/%Y %H:%M')
+            })
+        else:
+            return jsonify({'success': False, 'message': 'Erro ao criar conversa.'}), 500
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Erro: {str(e)}'}), 500
+
 
 @app.route('/logout')
 def logout():

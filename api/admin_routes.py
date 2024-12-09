@@ -1,6 +1,7 @@
 from flask import Blueprint, render_template, jsonify, session, request, redirect, url_for
 from api.database import db, Usuario, Conversa, Mensagem
 import bcrypt
+from supabase_client import supabase
 
 admin_routes_bp = Blueprint('admin_routes', __name__)
 
@@ -42,16 +43,12 @@ def excluir_usuario(usuario_id):
     if not session.get('is_admin'):
         return redirect(url_for('login'))
 
-    usuario = Usuario.query.get(usuario_id)
-    if usuario:
-        try:
-            db.session.delete(usuario)
-            db.session.commit()
-        except Exception as e:
-            db.session.rollback()
-            return jsonify({'error': f'Erro ao excluir usuário: {e}'}), 400
+    try:
+        supabase.table("usuarios").delete().eq("id", usuario_id).execute()
+        return redirect(url_for('admin_routes.listar_usuarios'))
+    except Exception as e:
+        return jsonify({'error': f'Erro ao excluir usuário: {e}'}), 400
 
-    return redirect(url_for('admin_routes.listar_usuarios'))
 
 
 # Gerenciamento de conversas
