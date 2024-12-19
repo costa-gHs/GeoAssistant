@@ -42,28 +42,41 @@ def testar_login(nome, senha):
 def is_bcrypt_hash(value):
     return value.startswith("$2b$") or value.startswith("$2a$") or value.startswith("$2y$")
 
+def get_api_key(user_id):
+    try:
+        print(f"Buscando chave API para o usuário ID {user_id}...")
+
+        response = supabase.table("api_keys").select("*").eq("user_id", user_id).execute()
+        data = response.data[0] if response.data else None
+
+        if not data:
+            print(f"Nenhuma chave API encontrada para o usuário ID {user_id}.")
+            return None
+
+        print(f"Chave API encontrada: {data['chave']}")
+        return data["chave"]
+    except Exception as e:
+        print(f"Erro ao buscar a chave API para o usuário ID {user_id}: {e}")
+        return None
+
+
 # Atualizar senhas para hashes bcrypt
-def atualizar_senhas_para_hash():
+def atualizar_senhas_para_hash(table, column):
     try:
         # Obter todos os usuários
-        response = supabase.table("usuarios").select("*").execute()
+        response = supabase.table(table).select("*").execute()
 
         if not response.data:
             print("Nenhum usuário encontrado ou erro na consulta.")
             return
 
-        usuarios = response.data
-        for usuario in usuarios:
-            if not is_bcrypt_hash(usuario["senha"]):  # Verifica se a senha não é um hash
-                nova_senha_hash = bcrypt.hashpw(usuario["senha"].encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+        datas = response.data
+        for data in datas:
+            if not is_bcrypt_hash(data[column]):  # Verifica se a senha não é um hash
+                nova_senha_hash = bcrypt.hashpw(data[column].encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
                 # Atualiza a senha no banco de dados
-                update_response = supabase.table("usuarios").update({"senha": nova_senha_hash}).eq("id", usuario["id"]).execute()
-
-                if update_response:
-                    print(f"Senha atualizada para o usuário: {usuario['nome']}")
-                else:
-                    print(f"Erro ao atualizar senha para o usuário: {usuario['nome']}")
+                update_response = supabase.table(table).update({column: nova_senha_hash}).eq("id", data["id"]).execute()
 
         print("Atualização de senhas concluída!")
     except Exception as e:
@@ -71,4 +84,4 @@ def atualizar_senhas_para_hash():
 
 # Executa a atualização
 if __name__ == "__main__":
-    atualizar_senhas_para_hash()
+    atualizar_senhas_para_hash("api_keys", "chave")

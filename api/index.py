@@ -7,7 +7,7 @@ import bcrypt
 from api.admin_routes import admin_routes_bp  # Novo nome do Blueprint
 from api.database import db, Usuario, Conversa, Mensagem  # Importa db e modelos
 from datetime import datetime as dt
-from api.supabase_client import supabase, verificar_senha
+from api.supabase_client import supabase, verificar_senha, get_api_key
 import datetime
 
 app = Flask(__name__, static_folder='../static', template_folder='../templates')
@@ -216,31 +216,52 @@ def login():
     if request.method == "POST":
         nome = request.form.get("nome")
         senha = request.form.get("senha")
-        api_key = request.form.get("api_key")
 
         try:
-            # Busca o usuário no Supabase
+            # Log de início do processo
+            print(f"Iniciando login para o usuário: {nome}")
+
+            # Busca o usuário no banco
             response = supabase.table("usuarios").select("*").eq("nome", nome).execute()
             usuario = response.data[0] if response.data else None
 
-            if usuario and verificar_senha(senha, usuario["senha"]):
-                # Sessão inicializada
-                session["usuario_id"] = usuario["id"]
-                session["usuario_nome"] = usuario["nome"]
-                session["is_admin"] = usuario["is_admin"]
-                session["api_key"] = api_key
-
-                # Atualiza o último login
-                supabase.table("usuarios").update(
-                    {"data_ultimo_login": datetime.datetime.now().isoformat()}
-                ).eq("id", usuario["id"]).execute()
-
-                return redirect(url_for("home"))
-            else:
+            if not usuario:
+                print("Usuário não encontrado no banco de dados.")
                 return render_template("login.html", error="Usuário ou senha inválidos.")
+
+            # Verifica a senha
+            if not verificar_senha(senha, usuario["senha"]):
+                print("Senha inválida para o usuário.")
+                return render_template("login.html", error="Usuário ou senha inválidos.")
+
+            # Log de usuário encontrado
+            print(f"Usuário {nome} autenticado com sucesso. ID: {usuario['id']}")
+
+            # Verifica se há uma chave associada ao usuário
+            chave_response = supabase.table("api_keys").select("*").eq("user_id", usuario["id"]).execute()
+            chave = chave_response.data[0] if chave_response.data else None
+
+            if not chave:
+                print(f"Chave API não configurada para o usuário ID {usuario['id']}.")
+                return render_template("login.html", error="Chave API não configurada para este usuário.")
+
+            # Log da chave encontrada
+            print(f"Chave API encontrada para o usuário {nome}: {chave['chave']}")
+
+            # Sessão inicializada
+            session["usuario_id"] = usuario["id"]
+            session["usuario_nome"] = usuario["nome"]
+            session["is_admin"] = usuario.get("is_admin", False)
+            session["api_key"] = chave["chave"]  # Armazena a API Key na sessão
+
+            return redirect(url_for("home"))
         except Exception as e:
-            return render_template("login.html", error=f"Erro: {e}")
+            print(f"Erro durante o login: {e}")
+            return render_template("login.html", error=f"Erro interno no sistema.")
+
     return render_template("login.html")
+
+
 
 @app.route('/set_api_key', methods=['POST'])
 def set_api_key():
@@ -258,10 +279,22 @@ def set_api_key():
 # Função para enviar mensagem
 @app.route('/chat', methods=['POST'])
 def chat():
-    """Função para gerenciar interações de chat, criando conversas e manipulando threads."""
-    # Verifica se a API Key da OpenAI está na sessão
-    if 'api_key' not in session:
-        return jsonify({'error': 'Chave da API não definida'}), 400
+    if 'usuario_id' not in session:
+        return jsonify({'error': 'Usuário não autenticado'}), 403
+
+    usuario_id = session['usuario_id']
+    print(f"Processando chat para o usuário ID {usuario_id}...")
+
+    # Busca a chave API associada ao usuário
+    api_key = get_api_key(usuario_id)
+    if not api_key:
+        print(f"Erro: Chave API não configurada para o usuário ID {usuario_id}.")
+        return jsonify({'error': 'Chave API não configurada para este usuário.'}), 400
+
+    print(f"Chave API utilizada para o usuário ID {usuario_id}: {api_key}")
+    client = OpenAI(api_key=api_key)
+
+
 
     api_key = session.get('api_key')
     client = OpenAI(api_key=api_key)
