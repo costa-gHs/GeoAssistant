@@ -10,12 +10,26 @@
 </head>
 <body>
     {% if 'api_key' not in session %}
-    <div id="api-key-container" class="api-key-container">
-        <h1>Insira sua OpenAI API Key</h1>
-        <input type="password" id="api-key-input" placeholder="OpenAI API Key">
-        <button id="api-key-button">Enviar</button>
+    <div class="no-api-key-container">
+        <div class="no-api-key-card">
+            <h1>Insira sua OpenAI API Key</h1>
+            <p>Para começar a conversar com seu assistente de IA, é necessário informar sua API Key.</p>
+            <input type="password" id="api-key-input" placeholder="OpenAI API Key">
+            <button id="api-key-button">Enviar</button>
+        </div>
     </div>
     {% else %}
+    <header class="chat-header-bar">
+        <div class="chat-header-container">
+            <span class="chat-brand">InteliPro GeoCarbonite</span>
+            <nav class="chat-nav">
+                <a href="{{ url_for('home') }}">Home</a>
+                <button id="new-conversation-button" class="primary-button">Nova Conversa</button>
+                <a href="{{ url_for('logout') }}">Logout</a>
+            </nav>
+        </div>
+    </header>
+
     <div id="app-container">
         <!-- Sidebar para o histórico de conversas -->
         <aside class="sidebar">
@@ -33,27 +47,10 @@
 
         <!-- Container principal do chat -->
         <div id="chat-container" class="chat-container">
-            <header class="chat-header">
-                <div class="header-left">
-                    <h1>Bem-vindo, {{ usuario_nome }}! (ID: {{ usuario_id }})</h1>
-                </div>
-                <div class="header-right">
-                    <select id="assistant-select">
-                        {% for assistant in assistants %}
-                            <option value="{{ assistant.id }}">{{ assistant.name }}</option>
-                        {% endfor %}
-                    </select>
-                    <button id="new-conversation-button">Iniciar Nova Conversa</button>
-                    {% if is_admin %}
-                        <a href="{{ url_for('admin_routes.dashboard') }}" class="admin-button">Administração</a>
-                    {% endif %}
-                    <a href="{{ url_for('logout') }}" class="logout-button">Logout</a>
-                </div>
-            </header>
             <main id="chat-window" class="chat-window"></main>
             <footer class="chat-input">
                 <input type="text" id="user-input" placeholder="Digite sua mensagem...">
-                <button id="send-button">Enviar</button>
+                <button id="send-button" class="primary-button">Enviar</button>
             </footer>
         </div>
     </div>
@@ -94,8 +91,6 @@
         const chatWindow = document.getElementById('chat-window');
         const userInput = document.getElementById('user-input');
         const sendButton = document.getElementById('send-button');
-        const assistantSelect = document.getElementById('assistant-select');
-        const conversaItems = document.querySelectorAll('.conversa-item');
 
         function loadConversa(conversaId) {
             fetch(`/conversa/${conversaId}`)
@@ -114,13 +109,11 @@
 
                     // Exibe as mensagens
                     data.mensagens.forEach(mensagem => {
-                        // Mensagem do usuário
                         const userMessage = document.createElement('div');
                         userMessage.className = 'chat-message user-message';
                         userMessage.textContent = mensagem.usuario;
                         chatWindow.appendChild(userMessage);
 
-                        // Mensagem do assistente
                         const assistantMessage = document.createElement('div');
                         assistantMessage.className = 'chat-message assistant-message';
                         assistantMessage.innerHTML = DOMPurify.sanitize(marked.parse(mensagem.gpt));
@@ -134,73 +127,68 @@
                 });
         }
 
-
-
-
         function sendMessage() {
-            const assistantId = assistantSelect.value;
             const message = userInput.value.trim();
-            let conversaId = sessionStorage.getItem('conversa_id'); // Recupera o conversa_id
-            const threadId = sessionStorage.getItem('thread_id'); // Recupera o thread_id (se existir)
+            const conversaId = sessionStorage.getItem('conversa_id');
+            const threadId = sessionStorage.getItem('thread_id');
+            const assistantId = sessionStorage.getItem('selected_assistant_id'); // Recupera o ID do assistente
 
-            if (message) {
-                // Exibe a mensagem do usuário
-                const userMessage = document.createElement('div');
-                userMessage.className = 'chat-message user-message';
-                userMessage.textContent = message;
-                chatWindow.appendChild(userMessage);
-                chatWindow.scrollTop = chatWindow.scrollHeight;
+            // Adiciona mensagem do usuário ao chat imediatamente
+            const userMessage = document.createElement('div');
+            userMessage.className = 'chat-message user-message';
+            userMessage.textContent = message;
+            chatWindow.appendChild(userMessage);
+            chatWindow.scrollTop = chatWindow.scrollHeight;
 
-                userInput.value = '';
+            // Limpa a entrada do usuário
+            userInput.value = '';
 
-                // Exibe o indicador de carregamento
-                const loadingMessage = document.createElement('div');
-                loadingMessage.className = 'chat-message assistant-message loading';
-                loadingMessage.textContent = 'Assistente está digitando...';
-                chatWindow.appendChild(loadingMessage);
-                chatWindow.scrollTop = chatWindow.scrollHeight;
+            // Exibe mensagem de carregamento
+            const loadingMessage = document.createElement('div');
+            loadingMessage.className = 'chat-message assistant-message loading';
+            loadingMessage.textContent = 'Assistente está digitando...';
+            chatWindow.appendChild(loadingMessage);
+            chatWindow.scrollTop = chatWindow.scrollHeight;
 
-                // Envia a mensagem para o servidor
-                fetch('/chat', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ assistant_id: assistantId, message: message, thread_id: threadId, conversa_id: conversaId })
+            // Faz a requisição ao servidor
+            fetch('/chat', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    assistant_id: assistantId, // Inclui o ID do assistente
+                    message: message,
+                    thread_id: threadId,
+                    conversa_id: conversaId
                 })
-                .then(response => response.json())
-                .then(data => {
-                    chatWindow.removeChild(loadingMessage);
+            })
+            .then(response => response.json())
+            .then(data => {
+                chatWindow.removeChild(loadingMessage); // Remove mensagem de carregamento
 
-                    if (data.response) {
-                        // Atualiza o conversa_id no sessionStorage, caso uma nova conversa tenha sido criada
-                        if (data.conversa_id) {
-                            sessionStorage.setItem('conversa_id', data.conversa_id);
-                        }
-
-                        const assistantMessage = document.createElement('div');
-                        assistantMessage.className = 'chat-message assistant-message';
-                        assistantMessage.innerHTML = DOMPurify.sanitize(marked.parse(data.response));
-                        chatWindow.appendChild(assistantMessage);
-                        chatWindow.scrollTop = chatWindow.scrollHeight;
-                    } else if (data.error) {
-                        alert('Erro: ' + data.error);
+                if (data.response) {
+                    if (data.conversa_id) {
+                        sessionStorage.setItem('conversa_id', data.conversa_id); // Atualiza a conversa
                     }
-                })
-                .catch(error => {
-                    console.error('Erro ao enviar mensagem:', error);
-                    chatWindow.removeChild(loadingMessage);
-                    alert('Erro ao enviar mensagem. Por favor, tente novamente.');
-                });
-            }
+
+                    const assistantMessage = document.createElement('div');
+                    assistantMessage.className = 'chat-message assistant-message';
+                    assistantMessage.innerHTML = DOMPurify.sanitize(marked.parse(data.response));
+                    chatWindow.appendChild(assistantMessage);
+                    chatWindow.scrollTop = chatWindow.scrollHeight;
+                } else if (data.error) {
+                    alert('Erro: ' + data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Erro ao enviar mensagem:', error);
+                chatWindow.removeChild(loadingMessage);
+                alert('Erro ao enviar mensagem. Por favor, tente novamente.');
+            });
         }
 
 
-
-
-
-
-        // Adicionar evento para enviar ao clicar no botão ou pressionar Enter
         sendButton.addEventListener('click', sendMessage);
         userInput.addEventListener('keypress', function(e) {
             if (e.key === 'Enter') {
@@ -209,13 +197,12 @@
         });
 
         const newConversationButton = document.getElementById('new-conversation-button');
-
         newConversationButton.addEventListener('click', () => {
             fetch('/nova_conversa', { method: 'POST' })
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
-                        chatWindow.innerHTML = '';  // Limpa o chat para a nova conversa
+                        chatWindow.innerHTML = '';
 
                         const conversaList = document.getElementById('conversa-list');
                         const newConversaItem = document.createElement('li');
@@ -238,17 +225,23 @@
                 });
         });
 
-
         document.querySelectorAll('.conversa-item').forEach(item => {
             item.addEventListener('click', () => {
                 const conversaId = item.getAttribute('data-conversa-id');
                 loadConversa(conversaId);
             });
         });
+        // Captura o assistant_id da query string
+        const urlParams = new URLSearchParams(window.location.search);
+        const assistantIdFromUrl = urlParams.get('assistant_id');
+        if (assistantIdFromUrl) {
+            sessionStorage.setItem('selected_assistant_id', assistantIdFromUrl); // Salva no sessionStorage
+        }
+
+
 
 
         {% endif %}
-
     </script>
 </body>
 </html>

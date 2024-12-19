@@ -11,8 +11,8 @@ def verificar_senha(senha, hash_armazenado):
     return bcrypt.checkpw(senha.encode("utf-8"), hash_armazenado.encode("utf-8"))
 
 # Configurações do Supabase
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+SUPABASE_URL = "https://xtrtbojamxglxscpkrax.supabase.co"#os.getenv("SUPABASE_URL")
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh0cnRib2phbXhnbHhzY3BrcmF4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzMyNTAxODQsImV4cCI6MjA0ODgyNjE4NH0.m0PKEYvBzbvZd-lt6nnZKBlngDVLS8gbgv3x13bK0W0"#os.getenv("SUPABASE_KEY")
 
 # Inicializa o cliente Supabase
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)

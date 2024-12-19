@@ -7,7 +7,7 @@ import bcrypt
 from api.admin_routes import admin_routes_bp  # Novo nome do Blueprint
 from api.database import db, Usuario, Conversa, Mensagem  # Importa db e modelos
 from datetime import datetime as dt
-from supabase_client import supabase, verificar_senha
+from api.supabase_client import supabase, verificar_senha
 import datetime
 
 app = Flask(__name__, static_folder='../static', template_folder='../templates')
@@ -160,14 +160,54 @@ def index():
     # Carrega o histórico de conversas
     historico = carregar_historico(usuario_id)
 
-    # Passa o histórico para o template
+    # Pega o assistant_id da querystring, caso exista
+    assistant_id = request.args.get('assistant_id')
+
     return render_template(
         'index.html',
         usuario_nome=usuario_nome,
         is_admin=is_admin,
         assistants=assistants,
-        historico=historico
+        historico=historico,
+        selected_assistant_id=assistant_id
     )
+
+
+@app.route('/home')
+def home():
+    if 'usuario_id' not in session:
+        return redirect(url_for('login'))
+
+    usuario_nome = session.get('usuario_nome')
+
+    # Verifica se o usuário é CaioD2G e redireciona ao chat
+    if usuario_nome == 'CaioD2G':
+        return redirect(url_for('index', assistant_id='asst_9pmT1xXEYD9aCYvyDHWlFGJK'))
+
+    try:
+        # Consulta direta à tabela 'ai_models'
+        response = supabase.table("ai_models").select("*").execute()
+        ai_models = response.data  # Lista de assistentes
+        print(f"Dados retornados: {ai_models}")  # Log para verificar os dados retornados
+    except Exception as e:
+        ai_models = []
+        print(f"Erro ao buscar assistentes: {e}")
+
+    return render_template('home.html', ai_models=ai_models)
+
+
+@app.route('/debug-tables')
+def debug_tables():
+    try:
+        # Consulta direta ao Supabase para listar tabelas no schema público
+        response = supabase.table("information_schema.tables").select("table_name").eq("table_schema", "public").execute()
+        tables = response.data  # Lista de tabelas
+        print(f"Tabelas encontradas no banco de dados: {tables}")
+        return jsonify({"tables": tables})
+    except Exception as e:
+        print(f"Erro ao listar tabelas: {e}")
+        return jsonify({"error": str(e)}), 500
+
 
 
 # Rota de login
@@ -195,7 +235,7 @@ def login():
                     {"data_ultimo_login": datetime.datetime.now().isoformat()}
                 ).eq("id", usuario["id"]).execute()
 
-                return redirect(url_for("index"))
+                return redirect(url_for("home"))
             else:
                 return render_template("login.html", error="Usuário ou senha inválidos.")
         except Exception as e:
@@ -225,9 +265,13 @@ def chat():
 
     api_key = session.get('api_key')
     client = OpenAI(api_key=api_key)
-
     data = request.get_json()
     assistant_id = data.get('assistant_id')
+    user_message = data.get('message')
+
+    # Adiciona logs para depuração
+    print(f"assistant_id recebido: {assistant_id}")
+    print(f"user_message recebido: {user_message}")
     user_message = data.get('message')
     conversa_id = data.get('conversa_id')  # Pode ser None
 
