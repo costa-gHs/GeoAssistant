@@ -231,6 +231,14 @@ def get_assistant_reply(messages):
                     return text  # Retorna o texto da mensagem mais recente do assistente
     return None
 
+async def check_run_status(client, thread_id, run_id):
+    try:
+        run = client.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run_id)
+        return run.status
+    except Exception as e:
+        print(f"Erro ao verificar status: {e}")
+        return None
+
 # Rota principal
 @app.route('/')
 def index():
@@ -417,20 +425,17 @@ def chat():
     data = request.get_json()
     assistant_id = data.get('assistant_id')
     user_message = data.get('message')
-    conversa_id = data.get('conversa_id')  # Pode ser None
+    conversa_id = data.get('conversa_id')
 
-    # Adiciona logs para depuração
     print(f"assistant_id recebido: {assistant_id}")
     print(f"user_message recebido: {user_message}")
 
-    # Validação de entrada
     if not assistant_id or not user_message:
         return jsonify({'error': 'Parâmetros inválidos'}), 400
 
     try:
         # Criação ou recuperação de uma conversa
         if not conversa_id:
-            # Cria uma nova conversa no Supabase
             nova_conversa_response = supabase.table("conversas").insert({
                 "id_usuario": usuario_id,
                 "data_inicio": datetime.now().isoformat()
@@ -440,16 +445,12 @@ def chat():
                 raise ValueError("Erro ao criar nova conversa no Supabase.")
 
             conversa_id = nova_conversa["id"]
-
-            # Cria uma nova thread no OpenAI
             thread_id = create_thread(client)
             if not thread_id:
                 return jsonify({'error': 'Erro ao criar uma nova thread.'}), 500
 
-            # Atualiza a thread_id na conversa do Supabase
             supabase.table("conversas").update({"thread_id": thread_id}).eq("id", conversa_id).execute()
         else:
-            # Recupera a conversa existente do Supabase
             conversa_response = supabase.table("conversas").select("*").eq("id", conversa_id).execute()
             conversa = conversa_response.data[0] if conversa_response.data else None
             if not conversa:
@@ -457,7 +458,6 @@ def chat():
 
             thread_id = conversa.get("thread_id")
             if not thread_id:
-                # Cria uma nova thread se não existir
                 thread_id = create_thread(client)
                 if not thread_id:
                     return jsonify({'error': 'Erro ao criar uma nova thread.'}), 500
@@ -465,62 +465,125 @@ def chat():
 
         print(f"Usando thread_id: {thread_id}")
 
-        # Envia mensagem para a thread
+        # Envia mensagem
         if not send_message(client, thread_id, user_message):
             return jsonify({'error': 'Erro ao enviar a mensagem.'}), 500
 
         # Executa a thread
-        run_response = run_thread(client, thread_id, assistant_id)
-        if not run_response:
+        run = run_thread(client, thread_id, assistant_id)
+        if not run:
             return jsonify({'error': 'Erro ao executar o tópico.'}), 500
 
-        # Polling para obter a resposta
-        # Polling para obter a resposta
-        max_wait_time = 60
-        poll_interval = 5
-        total_waited = 0
-        resposta = None
+        # Verifica o status atual
+        current_run = client.beta.threads.runs.retrieve(
+            thread_id=thread_id,
+            run_id=run.id
+        )
 
-        while total_waited < max_wait_time:
-            time.sleep(poll_interval)
-            total_waited += poll_interval
-            resposta_suja = get_response(client, thread_id)
-            if resposta_suja:
-                resposta = resposta_suja  # A resposta já está processada corretamente
-                break
+        if current_run.status == 'completed':
+            # Se já completou, processa e retorna a resposta
+            resposta = get_response(client, thread_id)
+            if resposta:
+                # Salva a mensagem
+                supabase.table("mensagens").insert({
+                    "id_conversa": conversa_id,
+                    "texto_usuario": user_message,
+                    "texto_gpt": resposta,
+                    "data_hora_envio": datetime.now().isoformat()
+                }).execute()
 
-        if resposta:
-            # Armazena a mensagem do usuário e a resposta no Supabase
-            supabase.table("mensagens").insert({
-                "id_conversa": conversa_id,
-                "texto_usuario": user_message,
-                "texto_gpt": resposta,
-                "data_hora_envio": datetime.now().isoformat()
-            }).execute()
+                # Salva métricas
+                input_tokens = contar_tokens(user_message)
+                output_tokens = contar_tokens(resposta)
+                salvar_mensagem_com_metricas(
+                    usuario_id=session['usuario_id'],
+                    id_conversa=conversa_id,
+                    texto_usuario=user_message,
+                    texto_gpt=resposta,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    modelo="4o-mini"
+                )
 
-            input_tokens = contar_tokens(user_message)
-            output_tokens = contar_tokens(resposta)
+                return jsonify({
+                    'status': 'completed',
+                    'response': resposta,
+                    'conversa_id': conversa_id
+                })
 
-            # Salvar mensagem com métricas
-            salvar_mensagem_com_metricas(
-                usuario_id=session['usuario_id'],
-                id_conversa=conversa_id,
-                texto_usuario=user_message,
-                texto_gpt=resposta,
-                input_tokens=input_tokens,
-                output_tokens=output_tokens,
-                modelo="4o-mini"  # Adicionar modelo apropriado
-            )
-
-            return jsonify({'response': resposta, 'conversa_id': conversa_id})
-        else:
-            return jsonify({'error': 'Não foi possível obter uma resposta do assistente.'}), 500
-
+        # Se não completou, retorna status pendente para polling
+        return jsonify({
+            'status': current_run.status,
+            'run_id': run.id,
+            'thread_id': thread_id,
+            'conversa_id': conversa_id,
+            'message': user_message  # Inclui a mensagem original para salvar depois
+        })
 
     except Exception as e:
         print(f"Erro ao processar o chat: {e}")
         return jsonify({'error': f'Erro ao processar o chat: {str(e)}'}), 500
 
+
+@app.route('/check_run')
+def check_run():
+    if 'usuario_id' not in session:
+        return jsonify({'error': 'Usuário não autenticado'}), 403
+
+    thread_id = request.args.get('thread_id')
+    run_id = request.args.get('run_id')
+    conversa_id = request.args.get('conversa_id')
+
+    try:
+        # Recupera a chave API
+        api_key = get_api_key(session['usuario_id'])
+        if not api_key:
+            return jsonify({'error': 'Chave API não configurada'}), 400
+
+        client = OpenAI(api_key=api_key)
+
+        # Verifica o status do run
+        run = client.beta.threads.runs.retrieve(
+            thread_id=thread_id,
+            run_id=run_id
+        )
+
+        print(f"Status do run {run_id}: {run.status}")
+
+        if run.status == 'completed':
+            # Obtém a resposta
+            resposta = get_response(client, thread_id)
+            if resposta:
+                # Salva a mensagem no Supabase
+                supabase.table("mensagens").insert({
+                    "id_conversa": conversa_id,
+                    "texto_usuario": request.args.get('message', ''),
+                    "texto_gpt": resposta,
+                    "data_hora_envio": datetime.now().isoformat()
+                }).execute()
+
+                # Salva métricas
+                input_tokens = contar_tokens(request.args.get('message', ''))
+                output_tokens = contar_tokens(resposta)
+                salvar_mensagem_com_metricas(
+                    usuario_id=session['usuario_id'],
+                    id_conversa=conversa_id,
+                    texto_usuario=request.args.get('message', ''),
+                    texto_gpt=resposta,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    modelo="4o-mini"
+                )
+
+                return jsonify({
+                    'status': 'completed',
+                    'response': resposta
+                })
+
+        return jsonify({'status': run.status})
+    except Exception as e:
+        print(f"Erro ao verificar status: {e}")
+        return jsonify({'status': 'failed', 'error': str(e)})
 
 @app.route('/conversa/<int:conversa_id>')
 def get_conversa(conversa_id):

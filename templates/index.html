@@ -216,23 +216,63 @@
             })
             .then(response => response.json())
             .then(data => {
-                updateTypingIndicator(false);
+                if (data.status === 'completed' && data.response) {
+                    // Resposta imediata
+                    updateTypingIndicator(false);
+                    chatWindow.appendChild(createMessage(data.response, 'assistant'));
+                    chatWindow.scrollTop = chatWindow.scrollHeight;
 
-                if (data.response) {
                     if (data.conversa_id) {
                         sessionStorage.setItem('conversa_id', data.conversa_id);
                     }
-                    chatWindow.appendChild(createMessage(data.response, 'assistant'));
-                    chatWindow.scrollTop = chatWindow.scrollHeight;
+                } else if (data.status === 'pending' || data.status === 'queued' || data.status === 'in_progress') {
+                    // Inicia polling para respostas pendentes
+                    pollRunStatus(data.thread_id, data.run_id, data.conversa_id, message);
                 } else if (data.error) {
+                    updateTypingIndicator(false);
                     alert('Erro: ' + data.error);
                 }
             })
             .catch(error => {
                 updateTypingIndicator(false);
-                console.error('Erro ao enviar mensagem:', error);
+                console.error('Erro:', error);
                 alert('Erro ao enviar mensagem. Por favor, tente novamente.');
             });
+        }
+
+        function pollRunStatus(threadId, runId, conversaId, message) {
+            const checkStatus = () => {
+                fetch(`/check_run?thread_id=${threadId}&run_id=${runId}&conversa_id=${conversaId}&message=${encodeURIComponent(message)}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        console.log('Status polling response:', data);  // Debug log
+
+                        if (data.status === 'completed' && data.response) {
+                            updateTypingIndicator(false);
+                            chatWindow.appendChild(createMessage(data.response, 'assistant'));
+                            chatWindow.scrollTop = chatWindow.scrollHeight;
+
+                            if (conversaId) {
+                                sessionStorage.setItem('conversa_id', conversaId);
+                            }
+                        } else if (data.status === 'failed' || data.error) {
+                            updateTypingIndicator(false);
+                            alert('Erro ao processar mensagem: ' + (data.error || 'Falha desconhecida'));
+                        } else if (['queued', 'in_progress', 'pending'].includes(data.status)) {
+                            // Continua polling se ainda estiver em andamento
+                            setTimeout(checkStatus, 1000);
+                        } else {
+                            updateTypingIndicator(false);
+                            alert('Status inesperado: ' + data.status);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Erro no polling:', error);
+                        setTimeout(checkStatus, 1000);
+                    });
+            };
+
+            checkStatus();
         }
 
         // Event Listeners
