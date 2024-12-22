@@ -17,8 +17,6 @@ app.secret_key = secrets.token_hex(16)
 
 app.instance_path = '/tmp'
 
-db.init_app(app)
-
 # Registra o Blueprint de administração
 app.register_blueprint(admin_routes_bp, url_prefix='/admin')  # Rotas administrativas
 
