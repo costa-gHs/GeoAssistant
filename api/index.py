@@ -17,9 +17,6 @@ app.secret_key = secrets.token_hex(16)
 
 app.instance_path = '/tmp'
 
-# Configuração do banco de dados
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:////tmp/usuarios.db'
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db.init_app(app)
 
 # Registra o Blueprint de administração
