@@ -8,7 +8,9 @@ from api.admin_routes import admin_routes_bp  # Novo nome do Blueprint
 from api.database import db, Usuario, Conversa, Mensagem  # Importa db e modelos
 from datetime import datetime as dt
 from api.supabase_client import supabase, verificar_senha, get_api_key
-import datetime
+from datetime import datetime
+import tiktoken
+from collections import defaultdict
 
 app = Flask(__name__, static_folder='../static', template_folder='../templates')
 app.secret_key = secrets.token_hex(16)
@@ -28,7 +30,7 @@ def iniciar_conversa(usuario_id):
     try:
         response = supabase.table("conversas").insert({
             "id_usuario": usuario_id,
-            "data_inicio": datetime.datetime.now().isoformat()  # Sempre ISO8601
+            "data_inicio": datetime.now().isoformat()  # Sempre ISO8601
         }).execute()
         return response.data[0] if response.data else None
     except Exception as e:
@@ -57,7 +59,7 @@ def carregar_historico(usuario_id):
         historico = []
         for conversa in conversas:
             # Converte string ISO8601 para datetime
-            data_inicio = datetime.datetime.fromisoformat(conversa["data_inicio"])
+            data_inicio = datetime.fromisoformat(conversa["data_inicio"])
             mensagens = supabase.table("mensagens").select("*").eq("id_conversa", conversa["id"]).execute().data
             historico.append({
                 "conversa_id": conversa["id"],
@@ -66,7 +68,7 @@ def carregar_historico(usuario_id):
                     {
                         "usuario": mensagem["texto_usuario"],
                         "gpt": mensagem["texto_gpt"],
-                        "data": datetime.datetime.fromisoformat(mensagem["data_hora_envio"])
+                        "data": datetime.fromisoformat(mensagem["data_hora_envio"])
                     }
                     for mensagem in mensagens
                 ]
@@ -124,12 +126,102 @@ def run_thread(client, thread_id, assistant_id):
         print(f"Erro ao executar o tópico: {e}")
         return None
 
-def get_response(client, thread_id):
+def contar_tokens(texto, modelo="gpt-4o-mini"):
+    """
+    Calcula o número de tokens para um texto usando o modelo especificado.
+    """
     try:
+        codificacao = tiktoken.encoding_for_model(modelo)
+        return len(codificacao.encode(texto))
+    except Exception as e:
+        print(f"Erro ao contar tokens: {e}")
+        return 0
+
+def get_response(client, thread_id, modelo="gpt-3.5-turbo"):
+    try:
+        # Obter as mensagens da thread
         response = client.beta.threads.messages.list(thread_id=thread_id, order="asc")
-        return response
+
+        # Verificar se a resposta é um dicionário e contém "data"
+        if isinstance(response, dict) and "data" in response:
+            messages = response["data"]
+        elif hasattr(response, "data"):
+            messages = response.data
+        else:
+            print("Erro: Resposta da API não contém mensagens válidas.")
+            return None
+
+        # Verificar mensagens
+        if not messages:
+            print("Nenhuma mensagem encontrada na thread.")
+            return None
+
+        # Encontrar a última mensagem do assistente
+        last_message = next(
+            (msg for msg in reversed(messages) if getattr(msg, "role", "") == "assistant"),
+            None
+        )
+
+        if not last_message:
+            print("Nenhuma resposta do assistente encontrada ainda.")
+            return None
+
+        # Processar o conteúdo da mensagem
+        content_text = "".join(
+            [block.text.value for block in getattr(last_message, "content", []) if block.type == "text"]
+        )
+
+        # Calcular tokens de entrada e saída
+        input_tokens = sum(
+            contar_tokens(
+                "".join(
+                    [block.text.value for block in getattr(msg, "content", []) if block.type == "text"]
+                ),
+                modelo,
+            )
+            for msg in messages
+            if getattr(msg, "role", "") == "user"
+        )
+        output_tokens = contar_tokens(content_text, modelo)
+
+        # Exibir os tokens calculados
+        print(f"Tokens de entrada (input): {input_tokens}")
+        print(f"Tokens de saída (output): {output_tokens}")
+        print(f"Resposta do assistente: {content_text}")
+
+        return content_text  # Retornar o texto da resposta
     except Exception as e:
         print(f"Erro ao obter resposta: {e}")
+        return None
+
+
+def salvar_mensagem_com_metricas(usuario_id, id_conversa, texto_usuario, texto_gpt, input_tokens, output_tokens,
+                                 modelo):
+    try:
+        # Salva a mensagem
+        mensagem_response = supabase.table("mensagens").insert({
+            "id_conversa": id_conversa,
+            "texto_usuario": texto_usuario,
+            "texto_gpt": texto_gpt,
+            "data_hora_envio": datetime.now().isoformat()
+        }).execute()
+
+        mensagem_id = mensagem_response.data[0]['id']
+
+        # Salva as métricas
+        supabase.table("token_metrics").insert({
+            "usuario_id": usuario_id,
+            "conversa_id": id_conversa,
+            "mensagem_id": mensagem_id,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "modelo": modelo,
+            "timestamp": datetime.now().isoformat()
+        }).execute()
+
+        return mensagem_id
+    except Exception as e:
+        print(f"Erro ao salvar mensagem e métricas: {e}")
         return None
 
 def get_assistant_reply(messages):
@@ -185,17 +277,49 @@ def home():
         return redirect(url_for('index', assistant_id='asst_9pmT1xXEYD9aCYvyDHWlFGJK'))
 
     try:
-        # Consulta direta à tabela 'ai_models'
+        # Buscar modelos de IA
         response = supabase.table("ai_models").select("*").execute()
-        ai_models = response.data  # Lista de assistentes
-        print(f"Dados retornados: {ai_models}")  # Log para verificar os dados retornados
+        ai_models = response.data
+
+        # Estatísticas para admins
+        stats = {}
+        if session.get('is_admin'):
+            # Total de usuários
+            users_count = supabase.table("usuarios").select("count").execute()
+            stats['total_usuarios'] = users_count.data[0]['count'] if users_count.data else 0
+
+            # Conversas de hoje - Aqui está a correção
+            today = datetime.now().strftime('%Y-%m-%d')
+            conversas_hoje = supabase.table("conversas")\
+                .select("count")\
+                .gte("data_inicio", today)\
+                .execute()
+            stats['conversas_hoje'] = conversas_hoje.data[0]['count'] if conversas_hoje.data else 0
+
+            # Total de tokens
+            tokens = supabase.table("token_metrics")\
+                .select("input_tokens,output_tokens")\
+                .execute()
+            total_tokens = sum([
+                (t.get('input_tokens', 0) + t.get('output_tokens', 0))
+                for t in tokens.data
+            ]) if tokens.data else 0
+            stats['total_tokens'] = total_tokens
+
+        return render_template(
+            'home.html',
+            ai_models=ai_models,
+            usuario_nome=session.get('usuario_nome'),
+            is_admin=session.get('is_admin', False),
+            **stats
+        )
+
     except Exception as e:
-        ai_models = []
-        print(f"Erro ao buscar assistentes: {e}")
-
-    return render_template('home.html', ai_models=ai_models)
-
-
+        return render_template(
+            'home.html',
+            ai_models=[],
+            error=str(e)
+        )
 @app.route('/debug-tables')
 def debug_tables():
     try:
@@ -294,19 +418,15 @@ def chat():
     print(f"Chave API utilizada para o usuário ID {usuario_id}: {api_key}")
     client = OpenAI(api_key=api_key)
 
-
-
-    api_key = session.get('api_key')
-    client = OpenAI(api_key=api_key)
+    # Obtém dados do request
     data = request.get_json()
     assistant_id = data.get('assistant_id')
     user_message = data.get('message')
+    conversa_id = data.get('conversa_id')  # Pode ser None
 
     # Adiciona logs para depuração
     print(f"assistant_id recebido: {assistant_id}")
     print(f"user_message recebido: {user_message}")
-    user_message = data.get('message')
-    conversa_id = data.get('conversa_id')  # Pode ser None
 
     # Validação de entrada
     if not assistant_id or not user_message:
@@ -315,12 +435,10 @@ def chat():
     try:
         # Criação ou recuperação de uma conversa
         if not conversa_id:
-            usuario_id = session['usuario_id']
-
             # Cria uma nova conversa no Supabase
             nova_conversa_response = supabase.table("conversas").insert({
                 "id_usuario": usuario_id,
-                "data_inicio": datetime.datetime.now().isoformat()
+                "data_inicio": datetime.now().isoformat()
             }).execute()
             nova_conversa = nova_conversa_response.data[0] if nova_conversa_response.data else None
             if not nova_conversa:
@@ -362,6 +480,7 @@ def chat():
             return jsonify({'error': 'Erro ao executar o tópico.'}), 500
 
         # Polling para obter a resposta
+        # Polling para obter a resposta
         max_wait_time = 60
         poll_interval = 5
         total_waited = 0
@@ -372,9 +491,8 @@ def chat():
             total_waited += poll_interval
             resposta_suja = get_response(client, thread_id)
             if resposta_suja:
-                resposta = get_assistant_reply(resposta_suja)
-                if resposta:
-                    break
+                resposta = resposta_suja  # A resposta já está processada corretamente
+                break
 
         if resposta:
             # Armazena a mensagem do usuário e a resposta no Supabase
@@ -382,13 +500,30 @@ def chat():
                 "id_conversa": conversa_id,
                 "texto_usuario": user_message,
                 "texto_gpt": resposta,
-                "data_hora_envio": datetime.datetime.now().isoformat()
+                "data_hora_envio": datetime.now().isoformat()
             }).execute()
+
+            input_tokens = contar_tokens(user_message)
+            output_tokens = contar_tokens(resposta)
+
+            # Salvar mensagem com métricas
+            salvar_mensagem_com_metricas(
+                usuario_id=session['usuario_id'],
+                id_conversa=conversa_id,
+                texto_usuario=user_message,
+                texto_gpt=resposta,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                modelo="4o-mini"  # Adicionar modelo apropriado
+            )
+
             return jsonify({'response': resposta, 'conversa_id': conversa_id})
         else:
             return jsonify({'error': 'Não foi possível obter uma resposta do assistente.'}), 500
 
+
     except Exception as e:
+        print(f"Erro ao processar o chat: {e}")
         return jsonify({'error': f'Erro ao processar o chat: {str(e)}'}), 500
 
 
@@ -411,7 +546,7 @@ def get_conversa(conversa_id):
             {
                 'usuario': mensagem["texto_usuario"],
                 'gpt': mensagem["texto_gpt"],
-                'data_hora_envio': datetime.datetime.fromisoformat(mensagem["data_hora_envio"]).strftime('%d/%m/%Y %H:%M')
+                'data_hora_envio': datetime.fromisoformat(mensagem["data_hora_envio"]).strftime('%d/%m/%Y %H:%M')
             }
             for mensagem in mensagens
         ]
@@ -426,7 +561,7 @@ def nova_conversa():
     try:
         nova_conversa = iniciar_conversa(session['usuario_id'])
         if nova_conversa:
-            nova_conversa["data_inicio"] = datetime.datetime.fromisoformat(nova_conversa["data_inicio"])  # Conversão
+            nova_conversa["data_inicio"] = datetime.fromisoformat(nova_conversa["data_inicio"])  # Conversão
             session['conversa_id'] = nova_conversa["id"]
             return jsonify({
                 'success': True,

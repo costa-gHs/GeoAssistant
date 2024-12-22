@@ -1,706 +1,280 @@
 <!DOCTYPE html>
 <html lang="pt-br">
 <head>
-    <meta charset="UTF-8"/>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-    <title>Plataforma de IA - Home</title>
-    <!-- Fonte Poppins -->
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap" rel="stylesheet"/>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>InteliPro GeoCarbonite - Home</title>
     <style>
-        /* Reset básico */
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
         }
 
         body {
-            font-family: 'Poppins', sans-serif;
-            background: #ffffff;
-            color: #333;
-            line-height: 1.5;
-            padding-top: 80px; /* Espaço para o header fixo */
-        }
-
-        a {
-            text-decoration: none;
-            color: inherit;
-            transition: color 0.3s ease;
-        }
-
-        a:hover {
-            color: #155cb5;
+            background-color: #f5f7fa;
+            color: #2d3748;
+            line-height: 1.6;
         }
 
         /* Header */
-        .site-header {
+        .header {
+            background: #fff;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
             position: fixed;
-            top: 0;
             width: 100%;
-            background: #fff;
-            border-bottom: 1px solid #eee;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-            z-index: 1000;
+            top: 0;
+            z-index: 100;
         }
 
-        .site-header-container {
+        .header-content {
             max-width: 1200px;
             margin: 0 auto;
-            padding: 15px 20px;
+            padding: 1rem;
             display: flex;
             justify-content: space-between;
             align-items: center;
         }
 
-        .site-brand {
-            font-size: 1.5em;
-            font-weight: 700;
-            color: #1a73e8;
+        .logo {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #2c5282;
         }
 
-        .main-nav a {
-            margin-left: 20px;
-            font-size: 0.95em;
-            color: #333;
+        .nav-links {
+            display: flex;
+            gap: 1.5rem;
+            align-items: center;
+        }
+
+        .nav-links a {
+            text-decoration: none;
+            color: #4a5568;
             font-weight: 500;
+            padding: 0.5rem 1rem;
+            border-radius: 0.375rem;
+            transition: all 0.2s;
         }
 
-        .main-nav .admin-link {
-            font-weight: 600;
-            color: #b50e0e;
+        .nav-links a:hover {
+            background-color: #edf2f7;
+            color: #2c5282;
         }
 
-        /* Hero Section */
-        .hero-section {
-            background: linear-gradient(to bottom right, #e3f0ff, #ffffff);
-            padding: 100px 20px;
+        .nav-links .admin-link {
+            background-color: #2c5282;
+            color: white;
         }
 
-        .hero-content {
+        .nav-links .admin-link:hover {
+            background-color: #2d3748;
+        }
+
+        /* Main Content */
+        .main-content {
             max-width: 1200px;
-            margin: 0 auto;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 40px;
+            margin: 6rem auto 2rem;
+            padding: 0 1rem;
         }
 
-        .hero-text {
-            flex: 1;
-        }
-
-        .hero-text h2 {
-            font-size: 2.5em;
-            color: #1a73e8;
-            font-weight: 700;
-            margin-bottom: 20px;
-        }
-
-        .hero-text p {
-            max-width: 500px;
-            font-size: 1.1em;
-            color: #555;
-            margin-bottom: 30px;
-            line-height: 1.6;
-        }
-
-        .hero-text .hero-button {
-            display: inline-block;
-            background: #1a73e8;
-            color: #fff;
-            padding: 12px 20px;
-            border-radius: 5px;
-            font-weight: 600;
-            transition: background-color 0.3s ease;
-        }
-
-        .hero-text .hero-button:hover {
-            background-color: #155cb5;
-        }
-
-        .hero-visual {
-            flex: 1;
-            height: 250px;
-            background: url('https://via.placeholder.com/500x250/ebf3ff/1a73e8?text=IA') no-repeat center/contain;
-        }
-
-        /* Search Section */
-        .search-section {
-            max-width: 1200px;
-            margin: 40px auto;
-            padding: 0 20px;
-        }
-
-        .search-container {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 20px;
-        }
-
-        .search-container input[type="text"] {
-            flex: 1;
-            padding: 10px;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-        }
-
-        .search-container button {
-            background: #1a73e8;
-            color: #fff;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 4px;
-            font-weight: 600;
-        }
-
-        .search-container button:hover {
-            background: #155cb5;
-        }
-
-        .filters {
-            display: flex;
-            gap: 20px;
-        }
-
-        .filters select {
-            padding: 8px;
-            border-radius: 4px;
-            border: 1px solid #ccc;
-        }
-
-        /* Featured Section */
-        .featured-section {
-            max-width: 1200px;
-            margin: 60px auto;
-            padding: 0 20px;
-            text-align: center;
-        }
-
-        .featured-section h2 {
-            font-size: 1.8em;
-            color: #1a73e8;
-            font-weight: 600;
-            margin-bottom: 30px;
-        }
-
-        .featured-container {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 30px;
-            justify-content: center;
-        }
-
-        .featured-card {
+        .welcome-section {
             background: #fff;
-            border: 1px solid #eee;
-            border-radius: 8px;
-            padding: 20px;
-            width: 300px;
-            text-align: center;
-            transition: box-shadow 0.3s ease, transform 0.3s ease;
+            border-radius: 0.5rem;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
         }
 
-        .featured-card:hover {
-            box-shadow: 0 4px 20px rgba(0,0,0,0.05);
-            transform: translateY(-3px);
+        .welcome-section h1 {
+            font-size: 1.875rem;
+            color: #2d3748;
+            margin-bottom: 1rem;
         }
 
-        .featured-card h3 {
-            color: #1a73e8;
-            margin-bottom: 10px;
-            font-weight: 600;
-        }
-
-        .featured-card p {
-            font-size: 0.95em;
-            color: #444;
-            margin-bottom: 15px;
-        }
-
-        .featured-card button {
-            background: #1a73e8;
-            color: #fff;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 4px;
-            font-weight: 600;
-        }
-
-        .featured-card button:hover {
-            background: #155cb5;
-        }
-
-        /* Create IA Section */
-        .create-ia-section {
-            background: #f9fbfd;
-            padding: 60px 20px;
-            text-align: center;
-        }
-
-        .create-ia-section h2 {
-            font-size: 1.8em;
-            color: #1a73e8;
-            font-weight: 600;
-            margin-bottom: 20px;
-        }
-
-        .create-ia-section p {
-            max-width: 600px;
-            margin: 0 auto 30px;
-            color: #555;
-            line-height: 1.6;
-        }
-
-        .create-ia-section button {
-            background: #1a73e8;
-            color: #fff;
-            border: none;
-            padding: 12px 24px;
-            border-radius: 4px;
-            font-weight: 600;
-        }
-
-        .create-ia-section button:hover {
-            background: #155cb5;
-        }
-
-        /* Assistants Section */
-        .assistants-section {
-            max-width: 1200px;
-            margin: 60px auto;
-            padding: 0 20px;
-        }
-
-        .assistants-container {
+        /* Cards Grid */
+        .models-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
-            gap: 30px;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 1.5rem;
+            margin-top: 2rem;
         }
 
-        .assistant-card {
+        .model-card {
             background: #fff;
-            border: 1px solid #eee;
-            border-radius: 8px;
-            padding: 25px 20px;
-            text-align: center;
-            transition: box-shadow 0.3s ease, transform 0.3s ease;
+            border-radius: 0.5rem;
+            padding: 1.5rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            transition: transform 0.2s, box-shadow 0.2s;
         }
 
-        .assistant-card:hover {
-            box-shadow: 0 4px 20px rgba(0,0,0,0.05);
-            transform: translateY(-3px);
+        .model-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
         }
 
-        .assistant-card h2 {
-            font-size: 1.2em;
-            color: #1a73e8;
-            margin-bottom: 15px;
-            font-weight: 600;
+        .model-card h3 {
+            color: #2c5282;
+            font-size: 1.25rem;
+            margin-bottom: 0.75rem;
         }
 
-        .assistant-card p {
-            font-size: 0.95em;
-            color: #444;
-            margin-bottom: 15px;
-            line-height: 1.4;
+        .model-info {
+            margin: 1rem 0;
+            font-size: 0.875rem;
+            color: #4a5568;
         }
 
-        .assistant-card p strong {
-            font-weight: 600;
+        .model-info p {
+            margin: 0.5rem 0;
+            display: flex;
+            justify-content: space-between;
         }
 
-        .assistant-card a {
+        .access-button {
             display: inline-block;
-            padding: 10px 20px;
-            background-color: #1a73e8;
-            color: #fff;
-            border-radius: 4px;
-            font-weight: 600;
-            font-size: 0.9em;
-        }
-
-        .assistant-card a:hover {
-            background-color: #155cb5;
-        }
-
-        /* Integrations Section */
-        .integrations-section {
-            max-width: 1200px;
-            margin: 60px auto;
-            padding: 0 20px;
+            width: 100%;
+            padding: 0.75rem 1rem;
+            background-color: #2c5282;
+            color: white;
             text-align: center;
+            text-decoration: none;
+            border-radius: 0.375rem;
+            font-weight: 500;
+            transition: background-color 0.2s;
         }
 
-        .integrations-section h2 {
-            font-size: 1.8em;
-            color: #1a73e8;
-            font-weight: 600;
-            margin-bottom: 20px;
+        .access-button:hover {
+            background-color: #2d3748;
         }
 
-        .integrations-section p {
-            max-width: 600px;
-            margin: 0 auto 30px;
-            color: #555;
-            line-height: 1.6;
-        }
-
-        .integrations-list {
-            display: flex;
-            gap: 30px;
-            justify-content: center;
-            flex-wrap: wrap;
-        }
-
-        .integrations-list li {
-            list-style: none;
-            font-size: 0.95em;
-            color: #333;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .integrations-list img {
-            width: 30px;
-            height: 30px;
-        }
-
-        /* Testimonials Section */
-        .testimonials-section {
-            background: #f9fbfd;
-            padding: 60px 20px;
-            text-align: center;
-        }
-
-        .testimonials-section h2 {
-            font-size: 1.8em;
-            color: #1a73e8;
-            font-weight: 600;
-            margin-bottom: 30px;
-        }
-
-        .testimonials-container {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 30px;
-            justify-content: center;
-        }
-
-        .testimonial-card {
+        /* Admin Dashboard Preview */
+        .admin-section {
             background: #fff;
-            border: 1px solid #eee;
-            border-radius: 8px;
-            padding: 20px;
-            max-width: 300px;
-            text-align: center;
-            font-size: 0.95em;
-            color: #444;
+            border-radius: 0.5rem;
+            padding: 1.5rem;
+            margin-top: 2rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
         }
 
-        .testimonial-card p {
-            margin-bottom: 10px;
-            font-style: italic;
+        .admin-section h2 {
+            color: #2d3748;
+            margin-bottom: 1rem;
         }
 
-        .testimonial-card span {
-            font-weight: 600;
-            color: #333;
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
         }
 
-        /* Documentation Section */
-        .documentation-section {
-            max-width: 1200px;
-            margin: 60px auto;
-            padding: 0 20px;
+        .stat-card {
+            background: #f7fafc;
+            padding: 1rem;
+            border-radius: 0.375rem;
             text-align: center;
         }
 
-        .documentation-section h2 {
-            font-size: 1.8em;
-            color: #1a73e8;
-            font-weight: 600;
-            margin-bottom: 20px;
+        .stat-card h4 {
+            color: #4a5568;
+            font-size: 0.875rem;
+            margin-bottom: 0.5rem;
         }
 
-        .documentation-section ul {
-            list-style: none;
-        }
-
-        .documentation-section li {
-            margin: 10px 0;
-        }
-
-        /* Community Section */
-        .community-section {
-            background: #f9fbfd;
-            padding: 60px 20px;
-            text-align: center;
-        }
-
-        .community-section h2 {
-            font-size: 1.8em;
-            color: #1a73e8;
-            font-weight: 600;
-            margin-bottom: 20px;
-        }
-
-        .community-section p {
-            max-width: 600px;
-            margin: 0 auto 30px;
-            color: #555;
-            line-height: 1.6;
-        }
-
-        .community-section button {
-            background: #1a73e8;
-            color: #fff;
-            border: none;
-            padding: 12px 24px;
-            border-radius: 4px;
+        .stat-card .value {
+            color: #2c5282;
+            font-size: 1.5rem;
             font-weight: 600;
         }
 
-        .community-section button:hover {
-            background: #155cb5;
-        }
-
-        /* Newsletter Section */
-        .newsletter-section {
-            max-width: 1200px;
-            margin: 60px auto;
-            padding: 0 20px;
-            text-align: center;
-        }
-
-        .newsletter-section h2 {
-            font-size: 1.8em;
-            color: #1a73e8;
-            font-weight: 600;
-            margin-bottom: 20px;
-        }
-
-        .newsletter-section p {
-            max-width: 600px;
-            margin: 0 auto 30px;
-            color: #555;
-            line-height: 1.6;
-        }
-
-        .newsletter-form {
-            display: flex;
-            flex-wrap: wrap;
-            justify-content: center;
-            gap: 10px;
-        }
-
-        .newsletter-form input[type="email"] {
-            padding: 10px;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-            width: 300px;
-        }
-
-        .newsletter-form button {
-            background: #1a73e8;
-            color: #fff;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 4px;
-            font-weight: 600;
-        }
-
-        .newsletter-form button:hover {
-            background: #155cb5;
-        }
-
-        /* Footer */
-        .site-footer {
-            border-top: 1px solid #eee;
-            text-align: center;
-            padding: 20px;
-            font-size: 0.9em;
-            color: #777;
-            margin-top: 60px;
-        }
-
-        .site-footer a {
-            color: #1a73e8;
-        }
-
-        .site-footer a:hover {
-            text-decoration: underline;
-        }
-
-        /* Responsividade */
-        @media (max-width: 900px) {
-            .hero-content {
+        @media (max-width: 768px) {
+            .header-content {
                 flex-direction: column;
-                text-align: center;
+                gap: 1rem;
             }
 
-            .hero-visual {
-                display: none;
+            .nav-links {
+                flex-wrap: wrap;
+                justify-content: center;
             }
 
-            .hero-text h2 {
-                font-size: 2em;
-            }
-
-            .hero-text p {
-                font-size: 1em;
-            }
-        }
-
-        @media (max-width: 600px) {
-            .site-header-container {
-                flex-direction: column;
-                gap: 10px;
-            }
-
-            .main-nav a {
-                margin-left: 0;
+            .models-grid {
+                grid-template-columns: 1fr;
             }
         }
     </style>
 </head>
 <body>
-    <header class="site-header">
-        <div class="site-header-container">
-            <span class="site-brand">InteliPro GeoCarbonite</span>
-            <nav class="main-nav">
+    <header class="header">
+        <div class="header-content">
+            <div class="logo">InteliPro GeoCarbonite</div>
+            <nav class="nav-links">
                 <a href="{{ url_for('home') }}">Home</a>
-                <a href="#">Sobre</a>
-                <a href="#">Suporte</a>
-                {% if is_admin %}
-                <a href="{{ url_for('admin_routes.dashboard') }}" class="admin-link">Administração</a>
+                {% if session['is_admin'] %}
+                    <a href="{{ url_for('admin_routes.dashboard') }}" class="admin-link">Dashboard Admin</a>
                 {% endif %}
                 <a href="{{ url_for('logout') }}">Logout</a>
             </nav>
         </div>
     </header>
 
-    <section class="hero-section">
-        <div class="hero-content">
-            <div class="hero-text">
-                <h2>Bem-vindo(a), {{ session['usuario_nome'] }}</h2>
-                <p>Descubra e acesse nossos assistentes de Inteligência Artificial. Escolha o melhor para as suas necessidades e impulsione sua experiência no mundo da IA.</p>
-                <a href="#assistants" class="hero-button">Ver Assistentes</a>
+    <main class="main-content">
+        <section class="welcome-section">
+            <h1>Bem-vindo(a), {{ session['usuario_nome'] }}</h1>
+            <p>Selecione um dos modelos de IA disponíveis para iniciar uma conversa.</p>
+        </section>
+
+        {% if session['is_admin'] %}
+        <section class="admin-section">
+            <h2>Visão Geral do Sistema</h2>
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <h4>Total de Usuários</h4>
+                    <div class="value">{{ total_usuarios }}</div>
+                </div>
+                <div class="stat-card">
+                    <h4>Conversas Hoje</h4>
+                    <div class="value">{{ conversas_hoje }}</div>
+                </div>
+                <div class="stat-card">
+                    <h4>Total de Tokens</h4>
+                    <div class="value">{{ total_tokens }}</div>
+                </div>
             </div>
-            <div class="hero-visual"></div>
-        </div>
-    </section>
+        </section>
+        {% endif %}
 
-    <section class="search-section">
-        <div class="search-container">
-            <input type="text" placeholder="Pesquisar IA por nome, modelo ou categoria..." aria-label="Pesquisar IA">
-            <button>Pesquisar</button>
-        </div>
-        <div class="filters">
-            <select aria-label="Filtrar por categoria">
-                <option value="">Todas as Categorias</option>
-                <option value="dev">Desenvolvimento</option>
-                <option value="atendimento">Atendimento ao Cliente</option>
-                <option value="marketing">Marketing & Vendas</option>
-            </select>
-            <select aria-label="Filtrar por empresa">
-                <option value="">Todas as Empresas</option>
-                <option value="openai">OpenAI</option>
-                <option value="google">Google</option>
-            </select>
-        </div>
-    </section>
-
-    <section class="featured-section">
-        <h2>Recomendações da Plataforma</h2>
-        <div class="featured-container">
-            <div class="featured-card">
-                <h3>Assistente de Código</h3>
-                <p>Especializado em sugestões de código e debugging em tempo real.</p>
-                <button>Acessar</button>
-            </div>
-            <div class="featured-card">
-                <h3>Consultor de Marketing IA</h3>
-                <p>Fornece insights para campanhas de marketing altamente segmentadas.</p>
-                <button>Acessar</button>
-            </div>
-        </div>
-    </section>
-
-    <section class="create-ia-section">
-        <h2>Crie sua Própria IA</h2>
-        <p>Personalize assistentes para resolver desafios específicos do seu negócio, sem precisar de conhecimento técnico. Aumente a eficiência, reduza custos e ganhe vantagem competitiva.</p>
-        <button>Criar Agora</button>
-    </section>
-
-    <section class="assistants-section" id="assistants">
-        <div class="assistants-container">
+        <div class="models-grid">
             {% if ai_models %}
-                {% for assistant in ai_models %}
-                <div class="assistant-card">
-                    <h2>{{ assistant.nome }}</h2>
-                    <p><strong>Modelo:</strong> {{ assistant.modelo }}</p>
-                    <p><strong>Empresa:</strong> {{ assistant.empresa }}</p>
-                    <a href="{{ url_for('index', assistant_id=assistant.assistant_id) }}">Acessar</a>
+                {% for model in ai_models %}
+                <div class="model-card">
+                    <h3>{{ model.nome }}</h3>
+                    <div class="model-info">
+                        <p>
+                            <span>Modelo:</span>
+                            <span>{{ model.modelo }}</span>
+                        </p>
+                        <p>
+                            <span>Empresa:</span>
+                            <span>{{ model.empresa }}</span>
+                        </p>
+                    </div>
+                    <a href="{{ url_for('index', assistant_id=model.assistant_id) }}" class="access-button">
+                        Acessar Chat
+                    </a>
                 </div>
                 {% endfor %}
             {% else %}
-                <p style="text-align: center; color: red; grid-column: 1 / -1;">Nenhum assistente encontrado.</p>
+                <div style="grid-column: 1/-1; text-align: center; padding: 2rem;">
+                    {% if error %}
+                        <p style="color: #e53e3e;">Erro ao carregar modelos: {{ error }}</p>
+                    {% else %}
+                        <p>Nenhum modelo de IA disponível no momento.</p>
+                    {% endif %}
+                </div>
             {% endif %}
         </div>
-    </section>
-
-    <section class="integrations-section">
-        <h2>Integrações e Ecossistema</h2>
-        <p>Conecte suas IAs às ferramentas que você já usa e expanda as possibilidades.</p>
-        <ul class="integrations-list">
-            <li><img src="icon-slack.png" alt="Slack"> Slack</li>
-            <li><img src="icon-zapier.png" alt="Zapier"> Zapier</li>
-            <li><img src="icon-github.png" alt="GitHub"> GitHub</li>
-        </ul>
-    </section>
-
-    <section class="testimonials-section">
-        <h2>O que nossos usuários dizem</h2>
-        <div class="testimonials-container">
-            <div class="testimonial-card">
-                <p>"A plataforma tornou meus processos de atendimento muito mais ágeis!"</p>
-                <span>- Maria, Empreendedora</span>
-            </div>
-            <div class="testimonial-card">
-                <p>"Criei minha IA personalizada em minutos, sem precisar de conhecimento técnico."</p>
-                <span>- João, Analista de Marketing</span>
-            </div>
-        </div>
-    </section>
-
-    <section class="documentation-section">
-        <h2>Aprenda a Usar a Plataforma</h2>
-        <ul>
-            <li><a href="#">Documentação Oficial</a></li>
-            <li><a href="#">Tutorial em Vídeo</a></li>
-            <li><a href="#">Perguntas Frequentes</a></li>
-        </ul>
-    </section>
-
-    <section class="community-section">
-        <h2>Junte-se à Nossa Comunidade</h2>
-        <p>Participe do nosso fórum e compartilhe conhecimento com outros entusiastas de IA, tire dúvidas e ajude a moldar o futuro da inteligência artificial.</p>
-        <button>Acessar Fórum</button>
-    </section>
-
-    <section class="newsletter-section">
-        <h2>Mantenha-se Atualizado</h2>
-        <p>Receba notícias sobre novas IAs, atualizações e ofertas especiais diretamente no seu e-mail.</p>
-        <div class="newsletter-form">
-            <input type="email" placeholder="Seu e-mail" aria-label="Seu e-mail">
-            <button>Assinar</button>
-        </div>
-    </section>
-
-    <footer class="site-footer">
-        <p>&copy; 2024 Plataforma de IA. Todos os direitos reservados. <a href="#">Política de Privacidade</a></p>
-    </footer>
+    </main>
 </body>
 </html>

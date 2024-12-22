@@ -2,6 +2,8 @@ from flask import Blueprint, render_template, jsonify, session, request, redirec
 from api.database import db, Usuario, Conversa, Mensagem
 import bcrypt
 from api.supabase_client import supabase
+from datetime import datetime, timedelta
+from collections import defaultdict
 
 admin_routes_bp = Blueprint('admin_routes', __name__)
 
@@ -10,7 +12,64 @@ admin_routes_bp = Blueprint('admin_routes', __name__)
 def dashboard():
     if not session.get('is_admin'):
         return redirect(url_for('login'))
-    return render_template('dashboard.html')
+
+    # Buscar usuários para o filtro
+    usuarios = []
+    try:
+        response = supabase.table("usuarios").select("id, nome").execute()
+        usuarios = response.data
+    except Exception as e:
+        print(f"Erro ao buscar usuários: {e}")
+
+    return render_template('dashboard.html', usuarios=usuarios)
+
+@admin_routes_bp.route('/metricas/tokens/usuarios', methods=['GET'])
+def obter_metricas_tokens_usuarios():
+    if not session.get('is_admin'):
+        return jsonify({'error': 'Acesso negado'}), 403
+
+    # Obtém parâmetros de filtro
+    dias = request.args.get('dias', default=30, type=int)
+    usuario_id = request.args.get('usuario_id', type=int)
+
+    try:
+        # Constrói a query base
+        query = supabase.table("token_metrics") \
+            .select("*, usuarios(nome)") \
+            .gte('timestamp', (datetime.now() - timedelta(days=dias)).isoformat())
+
+        # Adiciona filtro por usuário se especificado
+        if usuario_id:
+            query = query.eq('usuario_id', usuario_id)
+
+        response = query.execute()
+
+        # Processa os dados
+        usuarios_metricas = defaultdict(lambda: {
+            'nome': '',
+            'total_input_tokens': 0,
+            'total_output_tokens': 0,
+            'metricas_diarias': defaultdict(lambda: {'input': 0, 'output': 0})
+        })
+
+        for metric in response.data:
+            usuario_id = metric['usuario_id']
+            usuarios_metricas[usuario_id]['nome'] = metric['usuarios']['nome']
+            usuarios_metricas[usuario_id]['total_input_tokens'] += metric['input_tokens']
+            usuarios_metricas[usuario_id]['total_output_tokens'] += metric['output_tokens']
+
+            # Agrupa por dia
+            dia = datetime.fromisoformat(metric['timestamp']).strftime('%Y-%m-%d')
+            usuarios_metricas[usuario_id]['metricas_diarias'][dia]['input'] += metric['input_tokens']
+            usuarios_metricas[usuario_id]['metricas_diarias'][dia]['output'] += metric['output_tokens']
+
+        return jsonify({
+            'usuarios': dict(usuarios_metricas),
+            'periodo_dias': dias
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 # Gerenciamento de usuários
 @admin_routes_bp.route('/usuarios', methods=['GET', 'POST'])

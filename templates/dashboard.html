@@ -4,14 +4,15 @@
     <meta charset="UTF-8">
     <title>Admin Dashboard</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='admin_styles.css') }}">
+    <!-- Adicionar Chart.js para os gráficos -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
-    <!-- Header atualizado -->
     <header>
         <h1>Administração</h1>
         <nav>
             <ul>
-                <li><a href="{{ url_for('index') }}">Chat</a></li>
+                <li><a href="{{ url_for('home') }}">Home</a></li>
                 <li><a href="{{ url_for('admin_routes.dashboard') }}">Dashboard</a></li>
                 <li><a href="{{ url_for('admin_routes.listar_usuarios') }}">Usuários</a></li>
                 <li><a href="{{ url_for('admin_routes.listar_conversas') }}">Conversas</a></li>
@@ -20,8 +21,246 @@
         </nav>
     </header>
     <main>
-        <h2>Bem-vindo, {{ session['usuario_nome'] }}</h2>
-        <p>Use o menu para gerenciar o sistema.</p>
+        <h2>Dashboard de Métricas</h2>
+
+        <!-- Filtros -->
+        <div class="filters-container">
+            <select id="userFilter" class="dashboard-select">
+                <option value="all">Todos os Usuários</option>
+                {% for usuario in usuarios %}
+                <option value="{{ usuario.id }}">{{ usuario.nome }}</option>
+                {% endfor %}
+            </select>
+
+            <select id="periodFilter" class="dashboard-select">
+                <option value="7">Últimos 7 dias</option>
+                <option value="30" selected>Últimos 30 dias</option>
+                <option value="90">Últimos 90 dias</option>
+            </select>
+        </div>
+
+        <!-- Cards de métricas -->
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <h3>Total de Tokens de Entrada</h3>
+                <p class="metric-value" id="totalInputTokens">0</p>
+            </div>
+            <div class="metric-card">
+                <h3>Total de Tokens de Saída</h3>
+                <p class="metric-value" id="totalOutputTokens">0</p>
+            </div>
+        </div>
+
+        <!-- Gráfico -->
+        <div class="chart-container">
+            <canvas id="tokensChart"></canvas>
+        </div>
+
+        <!-- Tabela de usuários -->
+        <div class="table-container">
+            <h3>Detalhamento por Usuário</h3>
+            <table id="usersTable">
+                <thead>
+                    <tr>
+                        <th>Usuário</th>
+                        <th>Tokens de Entrada</th>
+                        <th>Tokens de Saída</th>
+                        <th>Total de Tokens</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- Dados serão inseridos via JavaScript -->
+                </tbody>
+            </table>
+        </div>
     </main>
+
+    <script>
+        // Variáveis globais
+        let chart = null;
+
+        // Função para formatar números
+        function formatNumber(num) {
+            return num.toLocaleString('pt-BR');
+        }
+
+        // Função para carregar os dados
+        async function loadMetrics() {
+            const userId = document.getElementById('userFilter').value;
+            const period = document.getElementById('periodFilter').value;
+
+            try {
+                const response = await fetch(`/admin/metricas/tokens/usuarios?dias=${period}${userId !== 'all' ? `&usuario_id=${userId}` : ''}`);
+                const data = await response.json();
+
+                updateDashboard(data);
+            } catch (error) {
+                console.error('Erro ao carregar métricas:', error);
+            }
+        }
+
+        // Função para atualizar o dashboard
+        function updateDashboard(data) {
+            // Atualizar totais
+            let totalInput = 0;
+            let totalOutput = 0;
+
+            Object.values(data.usuarios).forEach(usuario => {
+                totalInput += usuario.total_input_tokens;
+                totalOutput += usuario.total_output_tokens;
+            });
+
+            document.getElementById('totalInputTokens').textContent = formatNumber(totalInput);
+            document.getElementById('totalOutputTokens').textContent = formatNumber(totalOutput);
+
+            // Atualizar tabela
+            const tbody = document.getElementById('usersTable').getElementsByTagName('tbody')[0];
+            tbody.innerHTML = '';
+
+            Object.entries(data.usuarios).forEach(([id, usuario]) => {
+                const row = tbody.insertRow();
+                row.innerHTML = `
+                    <td>${usuario.nome}</td>
+                    <td>${formatNumber(usuario.total_input_tokens)}</td>
+                    <td>${formatNumber(usuario.total_output_tokens)}</td>
+                    <td>${formatNumber(usuario.total_input_tokens + usuario.total_output_tokens)}</td>
+                `;
+            });
+
+            // Atualizar gráfico
+            updateChart(data);
+        }
+
+        // Função para atualizar o gráfico
+        function updateChart(data) {
+            const chartData = {
+                labels: [],
+                datasets: [
+                    {
+                        label: 'Tokens de Entrada',
+                        data: [],
+                        borderColor: '#3498db',
+                        fill: false
+                    },
+                    {
+                        label: 'Tokens de Saída',
+                        data: [],
+                        borderColor: '#2ecc71',
+                        fill: false
+                    }
+                ]
+            };
+
+            // Preparar dados para o gráfico
+            Object.values(data.usuarios).forEach(usuario => {
+                Object.entries(usuario.metricas_diarias).forEach(([date, metrics]) => {
+                    if (!chartData.labels.includes(date)) {
+                        chartData.labels.push(date);
+                        chartData.datasets[0].data.push(metrics.input);
+                        chartData.datasets[1].data.push(metrics.output);
+                    }
+                });
+            });
+
+            // Ordenar datas
+            const sortedIndexes = chartData.labels.map((_, idx) => idx)
+                .sort((a, b) => chartData.labels[a].localeCompare(chartData.labels[b]));
+
+            chartData.labels = sortedIndexes.map(idx => chartData.labels[idx]);
+            chartData.datasets.forEach(dataset => {
+                dataset.data = sortedIndexes.map(idx => dataset.data[idx]);
+            });
+
+            // Criar ou atualizar gráfico
+            if (chart) {
+                chart.destroy();
+            }
+
+            const ctx = document.getElementById('tokensChart').getContext('2d');
+            chart = new Chart(ctx, {
+                type: 'line',
+                data: chartData,
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        }
+
+        // Eventos
+        document.getElementById('userFilter').addEventListener('change', loadMetrics);
+        document.getElementById('periodFilter').addEventListener('change', loadMetrics);
+
+        // Carregar dados iniciais
+        loadMetrics();
+    </script>
+
+    <style>
+        .filters-container {
+            margin: 20px 0;
+            display: flex;
+            gap: 15px;
+        }
+
+        .dashboard-select {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
+        }
+
+        .metric-card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .metric-card h3 {
+            margin: 0 0 10px 0;
+            color: #666;
+            font-size: 16px;
+        }
+
+        .metric-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+
+        .chart-container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin: 20px 0;
+            height: 400px;
+        }
+
+        .table-container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin: 20px 0;
+        }
+
+        .table-container h3 {
+            margin-bottom: 15px;
+            color: #2c3e50;
+        }
+    </style>
 </body>
 </html>
