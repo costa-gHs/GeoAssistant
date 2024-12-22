@@ -370,7 +370,7 @@ def login():
                 return render_template("login.html", error="Chave API não configurada para este usuário.")
 
             # Log da chave encontrada
-            print(f"Chave API encontrada para o usuário {nome}: {chave['chave']}")
+            print(f"Chave API encontrada para o usuário {nome}")
 
             # Sessão inicializada
             session["usuario_id"] = usuario["id"]
@@ -415,7 +415,7 @@ def chat():
         print(f"Erro: Chave API não configurada para o usuário ID {usuario_id}.")
         return jsonify({'error': 'Chave API não configurada para este usuário.'}), 400
 
-    print(f"Chave API utilizada para o usuário ID {usuario_id}: {api_key}")
+    print(f"Chave API utilizada para o usuário ID {usuario_id}:")
     client = OpenAI(api_key=api_key)
 
     # Obtém dados do request
