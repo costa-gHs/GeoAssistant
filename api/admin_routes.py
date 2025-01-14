@@ -1,7 +1,6 @@
 from flask import Blueprint, render_template, jsonify, session, request, redirect, url_for
 from api.database import db, Usuario, Conversa, Mensagem
 import bcrypt
-<<<<<<< HEAD
 from api.supabase_client import supabase, get_api_key
 from werkzeug.utils import secure_filename
 from datetime import datetime, timedelta
@@ -9,29 +8,24 @@ from collections import defaultdict
 from openai import OpenAI
 import time
 import os
-=======
-from api.supabase_client import supabase
-from datetime import datetime, timedelta
-from collections import defaultdict
 
->>>>>>> origin/main
 admin_routes_bp = Blueprint('admin_routes', __name__)
+
+# Armazenamento temporário de arquivos
+temp_file_storage = {}
 
 # Dashboard
 @admin_routes_bp.route('/dashboard')
 def dashboard():
     if not session.get('is_admin'):
         return redirect(url_for('login'))
-<<<<<<< HEAD
-=======
 
-    # Buscar usuários para o filtro
-    usuarios = []
     try:
         response = supabase.table("usuarios").select("id, nome").execute()
         usuarios = response.data
     except Exception as e:
         print(f"Erro ao buscar usuários: {e}")
+        usuarios = []
 
     return render_template('dashboard.html', usuarios=usuarios)
 
@@ -40,23 +34,19 @@ def obter_metricas_tokens_usuarios():
     if not session.get('is_admin'):
         return jsonify({'error': 'Acesso negado'}), 403
 
-    # Obtém parâmetros de filtro
     dias = request.args.get('dias', default=30, type=int)
     usuario_id = request.args.get('usuario_id', type=int)
 
     try:
-        # Constrói a query base
         query = supabase.table("token_metrics") \
             .select("*, usuarios(nome)") \
             .gte('timestamp', (datetime.now() - timedelta(days=dias)).isoformat())
 
-        # Adiciona filtro por usuário se especificado
         if usuario_id:
             query = query.eq('usuario_id', usuario_id)
 
         response = query.execute()
 
-        # Processa os dados
         usuarios_metricas = defaultdict(lambda: {
             'nome': '',
             'total_input_tokens': 0,
@@ -70,7 +60,6 @@ def obter_metricas_tokens_usuarios():
             usuarios_metricas[usuario_id]['total_input_tokens'] += metric['input_tokens']
             usuarios_metricas[usuario_id]['total_output_tokens'] += metric['output_tokens']
 
-            # Agrupa por dia
             dia = datetime.fromisoformat(metric['timestamp']).strftime('%Y-%m-%d')
             usuarios_metricas[usuario_id]['metricas_diarias'][dia]['input'] += metric['input_tokens']
             usuarios_metricas[usuario_id]['metricas_diarias'][dia]['output'] += metric['output_tokens']
@@ -82,45 +71,7 @@ def obter_metricas_tokens_usuarios():
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
->>>>>>> origin/main
 
-    # Buscar usuários para o filtro
-    usuarios = []
-    try:
-        response = supabase.table("usuarios").select("id, nome").execute()
-        usuarios = response.data
-    except Exception as e:
-        print(f"Erro ao buscar usuários: {e}")
-
-    return render_template('dashboard.html', usuarios=usuarios)
-
-@admin_routes_bp.route('/metricas/tokens/usuarios', methods=['GET'])
-def obter_metricas_tokens_usuarios():
-    if not session.get('is_admin'):
-        return jsonify({'error': 'Acesso negado'}), 403
-
-    try:
-        # Consulta a tabela token_metrics
-        response = supabase.table("token_metrics").select("*").execute()
-        token_metrics = response.data
-
-        # Processa os dados
-        usuarios_metricas = defaultdict(lambda: {
-            'total_input_tokens': 0,
-            'total_output_tokens': 0
-        })
-
-        for metric in token_metrics:
-            usuario_id = metric['usuario_id']
-            usuarios_metricas[usuario_id]['total_input_tokens'] += metric['input_tokens']
-            usuarios_metricas[usuario_id]['total_output_tokens'] += metric['output_tokens']
-
-        return jsonify({
-            'usuarios': dict(usuarios_metricas)
-        })
-
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
 # Gerenciamento de usuários
 @admin_routes_bp.route('/usuarios', methods=['GET', 'POST'])
 def listar_usuarios():
@@ -132,7 +83,6 @@ def listar_usuarios():
         senha = request.form.get('senha')
         is_admin = bool(request.form.get('is_admin'))
 
-        # Criptografa a senha e adiciona o novo usuário
         hashed_password = bcrypt.hashpw(senha.encode('utf-8'), bcrypt.gensalt())
         novo_usuario = Usuario(nome=nome, senha=hashed_password.decode('utf-8'), is_admin=is_admin)
 
@@ -146,7 +96,6 @@ def listar_usuarios():
     usuarios = Usuario.query.all()
     return render_template('usuarios.html', usuarios=usuarios)
 
-
 @admin_routes_bp.route('/usuarios/excluir/<int:usuario_id>', methods=['POST'])
 def excluir_usuario(usuario_id):
     if not session.get('is_admin'):
@@ -158,17 +107,14 @@ def excluir_usuario(usuario_id):
     except Exception as e:
         return jsonify({'error': f'Erro ao excluir usuário: {e}'}), 400
 
-
-
 # Gerenciamento de conversas
 @admin_routes_bp.route('/conversas', methods=['GET'])
 def listar_conversas():
     if not session.get('is_admin'):
         return jsonify({'error': 'Acesso negado.'}), 403
 
-    conversas = Conversa.query.join(Usuario).all()  # Inclui o relacionamento com o usuário
+    conversas = Conversa.query.join(Usuario).all()
     return render_template('conversas.html', conversas=conversas)
-
 
 @admin_routes_bp.route('/conversas/excluir/<int:conversa_id>', methods=['POST'])
 def excluir_conversa(conversa_id):
@@ -194,9 +140,8 @@ def listar_mensagens(conversa_id):
         'mensagens.html',
         mensagens=mensagens,
         conversa_id=conversa_id,
-        usuario_nome=conversa.usuario.nome  # Passa o nome do usuário
+        usuario_nome=conversa.usuario.nome
     )
-
 
 @admin_routes_bp.route('/mensagens/excluir/<int:mensagem_id>', methods=['POST'])
 def excluir_mensagem(mensagem_id):
@@ -210,23 +155,19 @@ def excluir_mensagem(mensagem_id):
         return jsonify({'success': 'Mensagem excluída com sucesso.'}), 200
     return jsonify({'error': 'Mensagem não encontrada.'}), 404
 
-
 @admin_routes_bp.route('/metricas/feedback')
 def obter_metricas_feedback():
     if not session.get('is_admin'):
         return jsonify({'error': 'Acesso negado'}), 403
 
     try:
-        # Pegar parâmetros de filtro
         periodo = request.args.get('dateRange', 'all')
         tipo_feedback = request.args.get('feedbackType', 'all')
         modelo = request.args.get('model', 'all')
         busca = request.args.get('searchTerm', '')
 
-        # Construir query base
         query = supabase.from_('vw_feedback_metricas').select('*')
 
-        # Aplicar filtros
         if periodo != 'all':
             if periodo == 'today':
                 query = query.gte('data_feedback', datetime.now().date().isoformat())
@@ -244,18 +185,14 @@ def obter_metricas_feedback():
         if busca:
             query = query.ilike('comentario', f'%{busca}%')
 
-        # Executar query
         response = query.execute()
         feedbacks = response.data
 
-        # Processar os dados
         total_feedbacks = len(feedbacks)
         feedbacks_positivos = sum(1 for f in feedbacks if f.get('feedback_tipo', False))
         feedbacks_negativos = total_feedbacks - feedbacks_positivos
-
         taxa_satisfacao = (feedbacks_positivos / total_feedbacks * 100) if total_feedbacks > 0 else 0
 
-        # Agrupar feedbacks por modelo
         feedbacks_por_modelo = {}
         for feedback in feedbacks:
             modelo = feedback.get('modelo_nome') or 'Desconhecido'
@@ -272,33 +209,29 @@ def obter_metricas_feedback():
                 feedbacks_por_modelo[modelo]['negativos'] += 1
             feedbacks_por_modelo[modelo]['total'] += 1
 
-            # Calcular taxa de satisfação por modelo
             feedbacks_por_modelo[modelo]['taxa_satisfacao'] = (
                 feedbacks_por_modelo[modelo]['positivos'] / feedbacks_por_modelo[modelo]['total'] * 100
                 if feedbacks_por_modelo[modelo]['total'] > 0 else 0
             )
 
-        # Preparar dados dos feedbacks para retornar
-        feedbacks_data = []
-        for feedback in feedbacks:
-            feedbacks_data.append({
-                'feedback_id': feedback.get('feedback_id'),
-                'feedback_tipo': feedback.get('feedback_tipo'),
-                'comentario': feedback.get('comentario'),
-                'data_feedback': feedback.get('data_feedback'),
-                'mensagem_id': feedback.get('mensagem_id'),
-                'modelo': feedback.get('modelo'),
-                'input_tokens': feedback.get('input_tokens'),
-                'output_tokens': feedback.get('output_tokens'),
-                'usuario_id': feedback.get('usuario_id'),
-                'id_modelo': feedback.get('id_modelo'),
-                'usuario_nome': feedback.get('usuario_nome'),
-                'texto_usuario': feedback.get('texto_usuario'),
-                'texto_gpt': feedback.get('texto_gpt'),
-                'id_conversa': feedback.get('id_conversa'),
-                'modelo_nome': feedback.get('modelo_nome'),
-                'modelo_empresa': feedback.get('modelo_empresa')
-            })
+        feedbacks_data = [{
+            'feedback_id': f.get('feedback_id'),
+            'feedback_tipo': f.get('feedback_tipo'),
+            'comentario': f.get('comentario'),
+            'data_feedback': f.get('data_feedback'),
+            'mensagem_id': f.get('mensagem_id'),
+            'modelo': f.get('modelo'),
+            'input_tokens': f.get('input_tokens'),
+            'output_tokens': f.get('output_tokens'),
+            'usuario_id': f.get('usuario_id'),
+            'id_modelo': f.get('id_modelo'),
+            'usuario_nome': f.get('usuario_nome'),
+            'texto_usuario': f.get('texto_usuario'),
+            'texto_gpt': f.get('texto_gpt'),
+            'id_conversa': f.get('id_conversa'),
+            'modelo_nome': f.get('modelo_nome'),
+            'modelo_empresa': f.get('modelo_empresa')
+        } for f in feedbacks]
 
         return jsonify({
             'taxa_satisfacao': taxa_satisfacao,
@@ -313,23 +246,18 @@ def obter_metricas_feedback():
         print(f"Erro ao obter métricas de feedback: {e}")
         return jsonify({'error': str(e)}), 500
 
-
 @admin_routes_bp.route('/visualizar/conversa/<int:conversa_id>')
 def visualizar_conversa(conversa_id):
-    """Rota para renderizar a página de visualização da conversa"""
     if not session.get('is_admin'):
         return redirect(url_for('login'))
     return render_template('visualizar_conversa.html', conversa_id=conversa_id)
 
-
 @admin_routes_bp.route('/api/conversas/<int:conversa_id>')
 def obter_conversa(conversa_id):
-    """API para obter dados da conversa"""
     if not session.get('is_admin'):
         return jsonify({'error': 'Acesso negado'}), 403
 
     try:
-        # 1. Primeiro, verificamos se a conversa existe e pegamos informações básicas
         conversa_base = supabase.table("conversas") \
             .select("""
                 *,
@@ -349,9 +277,7 @@ def obter_conversa(conversa_id):
             return jsonify({'error': 'Conversa não encontrada'}), 404
 
         conversa = conversa_base.data
-        print("Dados da conversa:", conversa)  # Debug
 
-        # 2. Buscamos todas as mensagens da conversa com seus feedbacks
         mensagens = supabase.table("mensagens") \
             .select("""
                 *,
@@ -369,37 +295,31 @@ def obter_conversa(conversa_id):
             .order("data_hora_envio") \
             .execute()
 
-        # 3. Processamos as mensagens para o formato desejado
         mensagens_formatadas = []
         total_input_tokens = 0
         total_output_tokens = 0
 
         for msg in mensagens.data:
-            # Obtém métricas de tokens
             token_data = msg.get('token_metrics', [{}])[0] if msg.get('token_metrics') else {}
             input_tokens = token_data.get('input_tokens', 0)
             output_tokens = token_data.get('output_tokens', 0)
 
-            # Acumula totais
             total_input_tokens += input_tokens
             total_output_tokens += output_tokens
 
-            # Obtém feedback
             feedback = msg.get('feedback', [{}])[0] if msg.get('feedback') else {}
 
-            # Adiciona mensagem do usuário
             mensagens_formatadas.append({
                 'role': 'user',
                 'content': msg['texto_usuario'],
                 'timestamp': msg['data_hora_envio']
             })
 
-            # Adiciona resposta do assistente
             mensagens_formatadas.append({
                 'role': 'assistant',
                 'content': msg['texto_gpt'],
                 'timestamp': msg['data_hora_envio'],
-                'feedback_tipo': feedback.get('tipo'),  # Mudei de feedback_tipo para tipo
+                'feedback_tipo': feedback.get('tipo'),
                 'feedback_comentario': feedback.get('comentario'),
                 'feedback_data': feedback.get('data_feedback'),
                 'tokens': {
@@ -408,9 +328,7 @@ def obter_conversa(conversa_id):
                 }
             })
 
-        # Extrair dados do usuário e modelo com tratamento de erro
-        usuario_nome = conversa.get('usuarios', [{}])[0].get('nome', 'Usuário Desconhecido') if conversa.get(
-            'usuarios') else 'Usuário Desconhecido'
+        usuario_nome = conversa.get('usuarios', [{}])[0].get('nome', 'Usuário Desconhecido')
         modelo_info = conversa.get('ai_models', [{}])[0] if conversa.get('ai_models') else {}
 
         return jsonify({
@@ -434,7 +352,6 @@ def obter_conversa(conversa_id):
     except Exception as e:
         print(f"Erro ao carregar conversa {conversa_id}: {str(e)}")
         return jsonify({'error': str(e)}), 500
-
 
 @admin_routes_bp.route('/assistentes')
 def gerenciar_assistentes():
