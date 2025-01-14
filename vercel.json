@@ -10,4 +10,3 @@
       { "src": "/(.*)", "dest": "/api/index.py" }
     ]
   }
-  

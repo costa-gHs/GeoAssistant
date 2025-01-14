@@ -8,4 +8,7 @@ psycopg2-binary
 supabase
 asyncpg
 tiktoken
+<<<<<<< HEAD
 werkzeug
+=======
+>>>>>>> origin/main

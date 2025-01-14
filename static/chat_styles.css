@@ -374,6 +374,7 @@ body {
         gap: 0.5rem;
         text-align: center;
     }
+<<<<<<< HEAD
 }
 .message-feedback {
     display: flex;
@@ -501,4 +502,6 @@ body {
 
 .modal-btn:hover {
     opacity: 0.9;
+=======
+>>>>>>> origin/main
 }

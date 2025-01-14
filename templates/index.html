@@ -128,16 +128,23 @@
         const clearButton = document.getElementById('clear-chat');
         const exportButton = document.getElementById('export-chat');
 
+<<<<<<< HEAD
         function createMessage(content, type, messageId) {
             const messageDiv = document.createElement('div');
             messageDiv.className = `chat-message ${type}-message`;
             messageDiv.dataset.messageId = messageId;
+=======
+        function createMessage(content, type) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `chat-message ${type}-message`;
+>>>>>>> origin/main
 
             const messageContent = document.createElement('div');
             messageContent.className = 'message-content';
 
             if (type === 'assistant') {
                 messageContent.innerHTML = DOMPurify.sanitize(marked.parse(content));
+<<<<<<< HEAD
 
                 const feedbackDiv = document.createElement('div');
                 feedbackDiv.className = 'message-feedback';
@@ -163,16 +170,26 @@
             } else {
                 messageContent.textContent = content;
                 messageDiv.appendChild(messageContent);
+=======
+            } else {
+                messageContent.textContent = content;
+>>>>>>> origin/main
             }
 
             const timestamp = document.createElement('div');
             timestamp.className = 'message-timestamp';
             timestamp.textContent = formatTimestamp();
+<<<<<<< HEAD
+=======
+
+            messageDiv.appendChild(messageContent);
+>>>>>>> origin/main
             messageDiv.appendChild(timestamp);
 
             return messageDiv;
         }
 
+<<<<<<< HEAD
         function handleFeedback(isLike, messageId, likeBtn, dislikeBtn) {
             likeBtn.classList.remove('active');
             dislikeBtn.classList.remove('active');
@@ -262,6 +279,8 @@
             }
         }
 
+=======
+>>>>>>> origin/main
         function updateTypingIndicator(show) {
             const existingIndicator = document.querySelector('.typing-indicator');
             if (show && !existingIndicator) {
@@ -290,15 +309,22 @@
 
                     // Limpar o chat antes de adicionar as mensagens
                     chatWindow.innerHTML = '';
+<<<<<<< HEAD
 
+=======
+>>>>>>> origin/main
                     sessionStorage.setItem('thread_id', data.thread_id);
                     sessionStorage.setItem('conversa_id', conversaId);
 
                     data.mensagens.forEach(mensagem => {
                         chatWindow.appendChild(createMessage(mensagem.usuario, 'user'));
+<<<<<<< HEAD
                         if (mensagem.gpt) {  // Só adiciona a resposta se existir
                             chatWindow.appendChild(createMessage(mensagem.gpt, 'assistant', mensagem.id));
                         }
+=======
+                        chatWindow.appendChild(createMessage(mensagem.gpt, 'assistant'));
+>>>>>>> origin/main
                     });
 
                     chatWindow.scrollTop = chatWindow.scrollHeight;
@@ -330,16 +356,38 @@
             })
             .then(response => response.json())
             .then(data => {
+<<<<<<< HEAD
                 if (data.status === 'pending') {
                     // Armazena os IDs retornados
                     sessionStorage.setItem('thread_id', data.thread_id);
                     sessionStorage.setItem('conversa_id', data.conversa_id);
 
+=======
+                if (data.status === 'completed' && data.response) {
+                    // Resposta imediata
+                    updateTypingIndicator(false);
+                    chatWindow.appendChild(createMessage(data.response, 'assistant'));
+                    chatWindow.scrollTop = chatWindow.scrollHeight;
+
+                    if (data.conversa_id) {
+                        sessionStorage.setItem('conversa_id', data.conversa_id);
+                    }
+                } else if (data.status === 'pending' || data.status === 'queued' || data.status === 'in_progress') {
+                    // Inicia polling para respostas pendentes
+>>>>>>> origin/main
                     pollRunStatus(data.thread_id, data.run_id, data.conversa_id, message);
                 } else if (data.error) {
                     updateTypingIndicator(false);
                     alert('Erro: ' + data.error);
                 }
+<<<<<<< HEAD
+=======
+            })
+            .catch(error => {
+                updateTypingIndicator(false);
+                console.error('Erro:', error);
+                alert('Erro ao enviar mensagem. Por favor, tente novamente.');
+>>>>>>> origin/main
             });
         }
 
@@ -348,6 +396,7 @@
                 fetch(`/check_run?thread_id=${threadId}&run_id=${runId}&conversa_id=${conversaId}&message=${encodeURIComponent(message)}`)
                     .then(response => response.json())
                     .then(data => {
+<<<<<<< HEAD
                         console.log('Status polling response:', data);
 
                         if (data.status === 'completed' && data.response) {
@@ -361,6 +410,27 @@
                         } else if (['queued', 'in_progress', 'requires_action'].includes(data.status)) {
                             // Continua polling
                             setTimeout(checkStatus, 1000);
+=======
+                        console.log('Status polling response:', data);  // Debug log
+
+                        if (data.status === 'completed' && data.response) {
+                            updateTypingIndicator(false);
+                            chatWindow.appendChild(createMessage(data.response, 'assistant'));
+                            chatWindow.scrollTop = chatWindow.scrollHeight;
+
+                            if (conversaId) {
+                                sessionStorage.setItem('conversa_id', conversaId);
+                            }
+                        } else if (data.status === 'failed' || data.error) {
+                            updateTypingIndicator(false);
+                            alert('Erro ao processar mensagem: ' + (data.error || 'Falha desconhecida'));
+                        } else if (['queued', 'in_progress', 'pending'].includes(data.status)) {
+                            // Continua polling se ainda estiver em andamento
+                            setTimeout(checkStatus, 1000);
+                        } else {
+                            updateTypingIndicator(false);
+                            alert('Status inesperado: ' + data.status);
+>>>>>>> origin/main
                         }
                     })
                     .catch(error => {
@@ -379,6 +449,7 @@
         });
 
         document.getElementById('new-conversation-button').addEventListener('click', () => {
+<<<<<<< HEAD
             const assistantId = sessionStorage.getItem('selected_assistant_id');
 
             fetch('/nova_conversa', {
@@ -393,6 +464,12 @@
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
+=======
+            fetch('/nova_conversa', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+>>>>>>> origin/main
                         chatWindow.innerHTML = '';
                         const conversaList = document.getElementById('conversa-list');
 
