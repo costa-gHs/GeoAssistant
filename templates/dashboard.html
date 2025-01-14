@@ -4,24 +4,400 @@
     <meta charset="UTF-8">
     <title>Admin Dashboard</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='admin_styles.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/styles/github.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@2.4.0/dist/purify.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/highlight.min.js"></script>
 </head>
 <body>
-    <!-- Header atualizado -->
     <header>
         <h1>Administração</h1>
         <nav>
             <ul>
-                <li><a href="{{ url_for('index') }}">Chat</a></li>
+                <li><a href="{{ url_for('home') }}">Home</a></li>
                 <li><a href="{{ url_for('admin_routes.dashboard') }}">Dashboard</a></li>
-                <li><a href="{{ url_for('admin_routes.listar_usuarios') }}">Usuários</a></li>
+                <li><a href="{{ url_for('admin_routes.gerenciar_assistentes') }}">Criar Assistente</a></li>
                 <li><a href="{{ url_for('admin_routes.listar_conversas') }}">Conversas</a></li>
+                <li><a href="{{ url_for('admin_routes.metricas_uso_usuarios') }}">Métricas de Uso</a></li>
                 <li><a href="{{ url_for('logout') }}">Logout</a></li>
             </ul>
         </nav>
     </header>
     <main>
-        <h2>Bem-vindo, {{ session['usuario_nome'] }}</h2>
-        <p>Use o menu para gerenciar o sistema.</p>
+       <h2>Dashboard de Métricas</h2>
+
+        <!-- Cards de métricas de feedback -->
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <h3>Taxa de Satisfação Geral</h3>
+                <p class="metric-value" id="satisfacaoGeral">0%</p>
+            </div>
+            <div class="metric-card">
+                <h3>Total de Feedbacks</h3>
+                <p class="metric-value" id="totalFeedbacks">0</p>
+            </div>
+            <div class="metric-card">
+                <h3>Feedbacks Positivos</h3>
+                <p class="metric-value feedback-positive" id="feedbacksPositivos">0</p>
+            </div>
+            <div class="metric-card">
+                <h3>Feedbacks Negativos</h3>
+                <p class="metric-value feedback-negative" id="feedbacksNegativos">0</p>
+            </div>
+        </div>
+
+        <!-- Gráfico de Feedback por Modelo -->
+        <div class="chart-container">
+            <h3>Feedback por Modelo</h3>
+            <canvas id="feedbackModeloChart"></canvas>
+        </div>
+
+        <!-- Tabela de Detalhes dos Feedbacks -->
+        <div class="table-container">
+            <h3>Detalhes dos Feedbacks</h3>
+
+            <!-- Seção de Filtros -->
+            <div class="filters-section">
+                <div class="filter-grid">
+                    <div class="filter-item">
+                        <label for="dateRange">Período</label>
+                        <select id="dateRange" onchange="aplicarFiltros()">
+                            <option value="all">Todos</option>
+                            <option value="today">Hoje</option>
+                            <option value="week">Última semana</option>
+                            <option value="month">Último mês</option>
+                        </select>
+                    </div>
+
+                    <div class="filter-item">
+                        <label for="feedbackType">Tipo de Feedback</label>
+                        <select id="feedbackType" onchange="aplicarFiltros()">
+                            <option value="all">Todos</option>
+                            <option value="positive">Positivo</option>
+                            <option value="negative">Negativo</option>
+                        </select>
+                    </div>
+
+                    <div class="filter-item">
+                        <label for="modelFilter">Modelo</label>
+                        <select id="modelFilter" onchange="aplicarFiltros()">
+                            <option value="all">Todos</option>
+                            <option value="gpt-4">GPT-4</option>
+                            <option value="gpt-3.5">GPT-3.5</option>
+                        </select>
+                    </div>
+
+                    <div class="filter-item">
+                        <label for="searchInput">Buscar</label>
+                        <div class="search-container">
+                            <input type="text" id="searchInput" placeholder="Buscar nos comentários..."
+                                   oninput="aplicarFiltrosComDelay()">
+                            <i class="fas fa-search search-icon"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tabela de Feedbacks -->
+            <table id="feedbackTable">
+                <thead>
+                    <tr>
+                        <th>Modelo</th>
+                        <th>Usuário</th>
+                        <th>Data</th>
+                        <th>Tipo</th>
+                        <th>Comentário</th>
+                        <th>Tokens</th>
+                        <th>Ações</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- Os dados serão preenchidos dinamicamente -->
+                </tbody>
+            </table>
+        </div>
+
+        <div id="conversaModal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div class="conversa-info">
+                        <h2>Detalhes da Conversa</h2>
+                        <div class="metadata">
+                            <span class="usuario-info">
+                                <i class="fas fa-user"></i> <span id="usuarioNome"></span>
+                            </span>
+                            <span class="modelo-info">
+                                <i class="fas fa-robot"></i> <span id="modeloNome"></span>
+                            </span>
+                            <span class="data-info">
+                                <i class="fas fa-calendar"></i> <span id="dataInicio"></span>
+                            </span>
+                        </div>
+                    </div>
+                    <button class="close-modal">×</button>
+                </div>
+                <div class="modal-body" id="conversaContainer">
+                    <!-- As mensagens serão inseridas aqui dinamicamente -->
+                </div>
+            </div>
+        </div>
+
     </main>
+
+    <script>
+        let filterTimeout;
+        async function loadDashboardData() {
+            try {
+                const response = await fetch('/admin/metricas/feedback');
+                const data = await response.json();
+
+                if (data.error) {
+                    console.error('Erro retornado pela API:', data.error);
+                    return;
+                }
+
+                updateFeedbackDashboard(data);
+                updateFeedbackDistributionChart(data);
+            } catch (error) {
+                console.error('Erro ao carregar dados do dashboard:', error);
+            }
+        }
+
+        function updateFeedbackDistributionChart(data) {
+            const ctx = document.getElementById('feedbackDistributionChart').getContext('2d');
+
+            new Chart(ctx, {
+                type: 'pie',
+                data: {
+                    labels: ['Positivos', 'Negativos'],
+                    datasets: [{
+                        data: [data.feedbacks_positivos, data.feedbacks_negativos],
+                        backgroundColor: ['#2ecc71', '#e74c3c']
+                    }]
+                },
+                options: {
+                    responsive: true
+                }
+            });
+        }
+        async function loadFeedbackMetrics() {
+            try {
+                const response = await fetch('/admin/metricas/feedback');
+                const feedbacks = await response.json();
+
+                if (feedbacks.error) {
+                    console.error('Erro retornado pela API:', feedbacks.error);
+                    return;
+                }
+
+                updateFeedbackDashboard(feedbacks);
+            } catch (error) {
+                console.error('Erro ao carregar métricas de feedback:', error);
+            }
+        }
+
+        function updateFeedbackDashboard(feedbacks) {
+            const satisfacaoGeral = feedbacks.taxa_satisfacao || 0;
+            const totalFeedbacks = feedbacks.total_feedbacks || 0;
+            const feedbacksPositivos = feedbacks.feedbacks_positivos || 0;
+            const feedbacksNegativos = feedbacks.feedbacks_negativos || 0;
+            const feedbacksPorModelo = feedbacks.feedbacks_por_modelo || {};
+
+            document.getElementById('satisfacaoGeral').textContent = `${satisfacaoGeral.toFixed(1)}%`;
+            document.getElementById('totalFeedbacks').textContent = totalFeedbacks;
+            document.getElementById('feedbacksPositivos').textContent = feedbacksPositivos;
+            document.getElementById('feedbacksNegativos').textContent = feedbacksNegativos;
+
+            updateFeedbackModeloChart(feedbacksPorModelo);
+            updateFeedbackTable(feedbacks.feedbacks);
+        }
+
+        function updateFeedbackModeloChart(feedbacksPorModelo) {
+            console.log('Atualizando gráfico com dados:', feedbacksPorModelo);
+            const ctx = document.getElementById('feedbackModeloChart').getContext('2d');
+
+            // Destruir gráfico existente se houver
+            if (window.feedbackModeloChart && typeof window.feedbackModeloChart.destroy === 'function') {
+                window.feedbackModeloChart.destroy();
+            }
+
+            // Preparar dados para o gráfico
+            const modelos = Object.keys(feedbacksPorModelo);
+            const positivos = modelos.map(m => feedbacksPorModelo[m].positivos);
+            const negativos = modelos.map(m => feedbacksPorModelo[m].negativos);
+
+            // Criar novo gráfico
+            window.feedbackModeloChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: modelos,
+                    datasets: [
+                        {
+                            label: 'Feedbacks Positivos',
+                            data: positivos,
+                            backgroundColor: '#2ecc71'
+                        },
+                        {
+                            label: 'Feedbacks Negativos',
+                            data: negativos,
+                            backgroundColor: '#e74c3c'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            stacked: true
+                        },
+                        x: {
+                            stacked: true
+                        }
+                    }
+                }
+            });
+        }
+
+        function aplicarFiltrosComDelay() {
+            clearTimeout(filterTimeout);
+            filterTimeout = setTimeout(aplicarFiltros, 300);
+        }
+
+        async function aplicarFiltros() {
+            const filtros = {
+                dateRange: document.getElementById('dateRange').value,
+                feedbackType: document.getElementById('feedbackType').value,
+                model: document.getElementById('modelFilter').value,
+                searchTerm: document.getElementById('searchInput').value
+            };
+
+            try {
+                const queryParams = new URLSearchParams();
+                Object.entries(filtros).forEach(([key, value]) => {
+                    if (value && value !== 'all') {
+                        queryParams.append(key, value);
+                    }
+                });
+
+                const response = await fetch(`/admin/metricas/feedback?${queryParams}`);
+                const data = await response.json();
+
+                if (data.error) {
+                    console.error('Erro ao aplicar filtros:', data.error);
+                    return;
+                }
+
+                updateFeedbackDashboard(data);
+            } catch (error) {
+                console.error('Erro ao aplicar filtros:', error);
+            }
+        }
+
+        async function visualizarConversa(conversaId) {
+            try {
+                console.log('Tentando visualizar conversa:', conversaId); // Log para debug
+                const response = await fetch(`/admin/api/conversas/${conversaId}`);
+
+                if (!response.ok) {
+                    console.error('Erro na resposta:', response.status, response.statusText);
+                    const errorText = await response.text();
+                    console.error('Erro detalhado:', errorText);
+                    return;
+                }
+
+                const data = await response.json();
+                if (data.error) {
+                    console.error('Erro retornado pela API:', data.error);
+                    return;
+                }
+
+                console.log('Dados da conversa recebidos:', data); // Log para debug
+                mostrarModalConversa(data);
+            } catch (error) {
+                console.error('Erro ao carregar conversa:', error);
+            }
+        }
+
+        function mostrarModalConversa(data) {
+            const modal = document.getElementById('conversaModal');
+            const container = document.getElementById('conversaContainer');
+
+            // Limpa o conteúdo anterior
+            container.innerHTML = '';
+
+            // Adiciona cada mensagem
+            data.messages.forEach(msg => {
+                const messageDiv = document.createElement('div');
+                messageDiv.className = `conversa-message ${msg.role}-message`;
+
+                const roleText = msg.role === 'user' ? 'Usuário' : 'Assistente';
+                const timestamp = new Date(msg.timestamp).toLocaleString();
+
+                messageDiv.innerHTML = `
+                    <div class="message-header">
+                        <strong>${roleText}</strong> - ${timestamp}
+                    </div>
+                    <div class="message-content">
+                        ${msg.content}
+                    </div>
+                `;
+
+                container.appendChild(messageDiv);
+            });
+
+            // Mostra o modal
+            modal.style.display = 'block';
+        }
+
+        // Configuração do modal
+        document.querySelector('.close-modal').onclick = function() {
+            document.getElementById('conversaModal').style.display = 'none';
+        }
+
+        window.onclick = function(event) {
+            const modal = document.getElementById('conversaModal');
+            if (event.target == modal) {
+                modal.style.display = 'none';
+            }
+        }
+
+        function updateFeedbackTable(feedbacks) {
+            const tbody = document.getElementById('feedbackTable').getElementsByTagName('tbody')[0];
+            tbody.innerHTML = '';
+
+            feedbacks.forEach(feedback => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${feedback.modelo_nome || 'Desconhecido'}</td>
+                    <td>${feedback.usuario_nome}</td>
+                    <td>${new Date(feedback.data_feedback).toLocaleString()}</td>
+                    <td>${feedback.feedback_tipo ? 'Positivo' : 'Negativo'}</td>
+                    <td>${feedback.comentario}</td>
+                    <td>E: ${feedback.input_tokens} / S: ${feedback.output_tokens}</td>
+                    <td>
+                        <button
+                            class="view-conversation-btn"
+                            onclick="visualizarConversa(${feedback.id_conversa})"
+                        >
+                            Ver Conversa
+                        </button>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        // Carrega os dados iniciais quando a página carregar
+        document.addEventListener('DOMContentLoaded', () => {
+            loadFeedbackMetrics();
+        });
+
+        document.addEventListener('DOMContentLoaded', loadFeedbackMetrics);
+        document.addEventListener('DOMContentLoaded', loadDashboardData);
+    </script>
+
 </body>
 </html>

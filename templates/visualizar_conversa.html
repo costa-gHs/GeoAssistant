@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Visualização de Conversa</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+    </style>
+</head>
+<body>
+    <div id="conversaModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Detalhes da Conversa</h2>
+                <div class="metadata">
+                    <span class="usuario-info">
+                        <i class="fas fa-user"></i>
+                        <span id="usuarioNome"></span>
+                    </span>
+                    <span class="modelo-info">
+                        <i class="fas fa-robot"></i>
+                        <span id="modeloNome"></span>
+                    </span>
+                    <span class="data-info">
+                        <i class="fas fa-calendar"></i>
+                        <span id="dataInicio"></span>
+                    </span>
+                </div>
+                <button class="close-modal" aria-label="Fechar">×</button>
+            </div>
+            <div class="modal-body" id="conversaContainer">
+                <!-- Messages will be inserted here dynamically -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function mostrarModalConversa(data) {
+            const modal = document.getElementById('conversaModal');
+            const container = document.getElementById('conversaContainer');
+
+            // Update header information
+            document.getElementById('usuarioNome').textContent = data.usuario.nome;
+            document.getElementById('modeloNome').textContent = `${data.modelo.nome} (${data.modelo.empresa})`;
+            document.getElementById('dataInicio').textContent = new Date(data.data_inicio).toLocaleString();
+
+            // Clear previous content
+            container.innerHTML = '';
+
+            // Add each message
+            data.messages.forEach(msg => {
+                const messageDiv = document.createElement('div');
+                messageDiv.className = `conversa-message ${msg.role}-message`;
+
+                const messageHeader = document.createElement('div');
+                messageHeader.className = 'message-header';
+                messageHeader.textContent = `${msg.role === 'user' ? 'Usuário' : 'Assistente'} - ${new Date(msg.timestamp).toLocaleString()}`;
+                messageDiv.appendChild(messageHeader);
+
+                const messageContent = document.createElement('div');
+                messageContent.className = 'message-content';
+                messageContent.textContent = msg.content;
+                messageDiv.appendChild(messageContent);
+
+                if (msg.role === 'assistant') {
+                    if (msg.feedback_tipo !== undefined) {
+                        const feedbackDiv = document.createElement('div');
+                        feedbackDiv.className = `feedback-info ${msg.feedback_tipo ? 'feedback-positive' : 'feedback-negative'}`;
+
+                        const icon = document.createElement('i');
+                        icon.className = `fas fa-thumbs-${msg.feedback_tipo ? 'up' : 'down'}`;
+                        feedbackDiv.appendChild(icon);
+
+                        const feedbackText = document.createElement('span');
+                        feedbackText.textContent = msg.feedback_comentario || 'Sem comentário';
+                        feedbackDiv.appendChild(feedbackText);
+
+                        messageDiv.appendChild(feedbackDiv);
+                    }
+
+                    if (msg.tokens) {
+                        const tokenInfo = document.createElement('div');
+                        tokenInfo.className = 'token-info';
+                        tokenInfo.textContent = `Tokens: ${msg.tokens.input} (entrada) / ${msg.tokens.output} (saída)`;
+                        messageDiv.appendChild(tokenInfo);
+                    }
+                }
+
+                container.appendChild(messageDiv);
+            });
+
+            // Show modal and setup close handlers
+            modal.style.display = 'block';
+
+            const closeModal = () => {
+                modal.style.display = 'none';
+            };
+
+            document.querySelector('.close-modal').onclick = closeModal;
+            window.onclick = (event) => {
+                if (event.target === modal) {
+                    closeModal();
+                }
+            };
+        }
+
+        async function visualizarConversa(conversaId) {
+            try {
+                const response = await fetch(`/admin/api/conversas/${conversaId}`);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const data = await response.json();
+                mostrarModalConversa(data);
+            } catch (error) {
+                console.error('Erro ao carregar conversa:', error);
+                alert('Erro ao carregar a conversa. Por favor, tente novamente.');
+            }
+        }
+    </script>
+</body>
+</html>

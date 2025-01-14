@@ -4,9 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Chat com Assistente</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='chat_styles.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/styles/github.min.css">
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/dompurify@2.4.0/dist/purify.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/highlight.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
 <body>
     {% if 'api_key' not in session %}
@@ -14,7 +17,7 @@
         <div class="no-api-key-card">
             <h1>Insira sua OpenAI API Key</h1>
             <p>Para começar a conversar com seu assistente de IA, é necessário informar sua API Key.</p>
-            <input type="password" id="api-key-input" placeholder="OpenAI API Key">
+            <input type="password" id="api-key-input" placeholder="OpenAI API Key" autocomplete="off">
             <button id="api-key-button">Enviar</button>
         </div>
     </div>
@@ -24,40 +27,73 @@
             <span class="chat-brand">InteliPro GeoCarbonite</span>
             <nav class="chat-nav">
                 <a href="{{ url_for('home') }}">Home</a>
-                <button id="new-conversation-button" class="primary-button">Nova Conversa</button>
-                <a href="{{ url_for('logout') }}">Logout</a>
+                <button id="new-conversation-button" class="primary-button">
+                    <i class="fas fa-plus"></i> Nova Conversa
+                </button>
+                <a href="{{ url_for('logout') }}" class="logout-button">
+                    <i class="fas fa-sign-out-alt"></i> Logout
+                </a>
             </nav>
         </div>
     </header>
 
     <div id="app-container">
-        <!-- Sidebar para o histórico de conversas -->
         <aside class="sidebar">
-            <h2>Histórico de Conversas</h2>
+            <h2><i class="fas fa-history"></i> Histórico de Conversas</h2>
             <ul id="conversa-list">
                 {% for conversa in historico %}
                     <li data-conversa-id="{{ conversa.conversa_id }}" class="conversa-item">
+                        <i class="fas fa-comment-dots"></i>
                         Iniciada em: {{ conversa.data_inicio.strftime('%d/%m/%Y %H:%M') }}
                     </li>
                 {% else %}
-                    <li>Nenhuma conversa anterior</li>
+                    <li class="no-conversations">Nenhuma conversa anterior</li>
                 {% endfor %}
             </ul>
         </aside>
 
-        <!-- Container principal do chat -->
         <div id="chat-container" class="chat-container">
             <main id="chat-window" class="chat-window"></main>
             <footer class="chat-input">
-                <input type="text" id="user-input" placeholder="Digite sua mensagem...">
-                <button id="send-button" class="primary-button">Enviar</button>
+                <div class="input-container">
+                    <input type="text" id="user-input" placeholder="Digite sua mensagem..." autocomplete="off">
+                    <div class="chat-controls">
+                        <button class="control-button" id="clear-chat" title="Limpar conversa">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                        <button class="control-button" id="export-chat" title="Exportar conversa">
+                            <i class="fas fa-download"></i>
+                        </button>
+                    </div>
+                    <button id="send-button" class="primary-button">
+                        <i class="fas fa-paper-plane"></i>
+                    </button>
+                </div>
             </footer>
         </div>
     </div>
     {% endif %}
 
     <script>
+        // Configuração do Marked
+        marked.setOptions({
+            highlight: function(code, lang) {
+                return hljs.highlightAuto(code).value;
+            },
+            breaks: true,
+            gfm: true
+        });
+
+        // Função para formatar timestamp
+        function formatTimestamp() {
+            return new Date().toLocaleTimeString('pt-BR', {
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+
         {% if 'api_key' not in session %}
+        // Código para API Key
         const apiKeyInput = document.getElementById('api-key-input');
         const apiKeyButton = document.getElementById('api-key-button');
 
@@ -66,9 +102,7 @@
             if (apiKey) {
                 fetch('/set_api_key', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ api_key: apiKey })
                 })
                 .then(response => response.json())
@@ -91,6 +125,159 @@
         const chatWindow = document.getElementById('chat-window');
         const userInput = document.getElementById('user-input');
         const sendButton = document.getElementById('send-button');
+        const clearButton = document.getElementById('clear-chat');
+        const exportButton = document.getElementById('export-chat');
+
+        function createMessage(content, type, messageId) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `chat-message ${type}-message`;
+            messageDiv.dataset.messageId = messageId;
+
+            const messageContent = document.createElement('div');
+            messageContent.className = 'message-content';
+
+            if (type === 'assistant') {
+                messageContent.innerHTML = DOMPurify.sanitize(marked.parse(content));
+
+                const feedbackDiv = document.createElement('div');
+                feedbackDiv.className = 'message-feedback';
+                feedbackDiv.innerHTML = `
+                    <button class="feedback-btn like" title="Resposta útil">
+                        <i class="fas fa-thumbs-up"></i>
+                        <span>Útil</span>
+                    </button>
+                    <button class="feedback-btn dislike" title="Resposta não útil">
+                        <i class="fas fa-thumbs-down"></i>
+                        <span>Não útil</span>
+                    </button>
+                `;
+
+                messageDiv.appendChild(messageContent);
+                messageDiv.appendChild(feedbackDiv);
+
+                const likeBtn = feedbackDiv.querySelector('.like');
+                const dislikeBtn = feedbackDiv.querySelector('.dislike');
+
+                likeBtn.addEventListener('click', () => handleFeedback(true, messageId, likeBtn, dislikeBtn));
+                dislikeBtn.addEventListener('click', () => handleFeedback(false, messageId, likeBtn, dislikeBtn));
+            } else {
+                messageContent.textContent = content;
+                messageDiv.appendChild(messageContent);
+            }
+
+            const timestamp = document.createElement('div');
+            timestamp.className = 'message-timestamp';
+            timestamp.textContent = formatTimestamp();
+            messageDiv.appendChild(timestamp);
+
+            return messageDiv;
+        }
+
+        function handleFeedback(isLike, messageId, likeBtn, dislikeBtn) {
+            likeBtn.classList.remove('active');
+            dislikeBtn.classList.remove('active');
+
+            if (isLike) {
+                likeBtn.classList.add('active');
+                saveFeedback(messageId, true);
+                showToast('Obrigado pelo feedback!', 'success');
+            } else {
+                dislikeBtn.classList.add('active');
+                showFeedbackModal(messageId);
+            }
+        }
+
+        function showFeedbackModal(messageId) {
+            const modal = document.createElement('div');
+            modal.className = 'feedback-modal';
+            modal.innerHTML = `
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3>Ajude-nos a melhorar</h3>
+                        <p>Por que esta resposta não foi útil?</p>
+                    </div>
+                    <textarea placeholder="Descreva o que poderia ser melhor (opcional)"></textarea>
+                    <div class="modal-buttons">
+                        <button class="modal-btn skip">Pular</button>
+                        <button class="modal-btn submit">Enviar feedback</button>
+                    </div>
+                </div>
+            `;
+
+            document.body.appendChild(modal);
+
+            const textarea = modal.querySelector('textarea');
+            const skipBtn = modal.querySelector('.skip');
+            const submitBtn = modal.querySelector('.submit');
+
+            skipBtn.addEventListener('click', () => {
+                saveFeedback(messageId, false);
+                modal.remove();
+                showToast('Feedback registrado', 'success');
+            });
+
+            submitBtn.addEventListener('click', () => {
+                saveFeedback(messageId, false, textarea.value);
+                modal.remove();
+                showToast('Obrigado pelo seu feedback!', 'success');
+            });
+
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) modal.remove();
+            });
+        }
+
+        function showToast(message, type = 'success') {
+            const toast = document.createElement('div');
+            toast.className = `feedback-toast ${type}`;
+            toast.innerHTML = `
+                <i class="fas fa-${type === 'success' ? 'check-circle' : 'exclamation-circle'}"></i>
+                <span>${message}</span>
+            `;
+
+            document.body.appendChild(toast);
+
+            setTimeout(() => {
+                toast.style.animation = 'slideOut 0.3s ease forwards';
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        async function saveFeedback(messageId, isLike, comentario = '') {
+            try {
+                const response = await fetch('/feedback', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        mensagem_id: messageId,
+                        tipo: isLike,
+                        comentario: comentario
+                    })
+                });
+
+                if (!response.ok) throw new Error('Erro ao salvar feedback');
+            } catch (error) {
+                console.error('Erro:', error);
+                showToast('Erro ao salvar feedback', 'error');
+            }
+        }
+
+        function updateTypingIndicator(show) {
+            const existingIndicator = document.querySelector('.typing-indicator');
+            if (show && !existingIndicator) {
+                const indicator = document.createElement('div');
+                indicator.className = 'chat-message assistant-message typing-indicator';
+                indicator.innerHTML = `
+                    <div class="typing-dots">
+                        <span></span><span></span><span></span>
+                    </div>
+                `;
+                chatWindow.appendChild(indicator);
+                chatWindow.scrollTop = chatWindow.scrollHeight;
+            } else if (!show && existingIndicator) {
+                existingIndicator.remove();
+            }
+        }
 
         function loadConversa(conversaId) {
             fetch(`/conversa/${conversaId}`)
@@ -101,63 +288,41 @@
                         return;
                     }
 
+                    // Limpar o chat antes de adicionar as mensagens
                     chatWindow.innerHTML = '';
 
-                    // Armazena o thread_id e conversa_id no sessionStorage
                     sessionStorage.setItem('thread_id', data.thread_id);
                     sessionStorage.setItem('conversa_id', conversaId);
 
-                    // Exibe as mensagens
                     data.mensagens.forEach(mensagem => {
-                        const userMessage = document.createElement('div');
-                        userMessage.className = 'chat-message user-message';
-                        userMessage.textContent = mensagem.usuario;
-                        chatWindow.appendChild(userMessage);
-
-                        const assistantMessage = document.createElement('div');
-                        assistantMessage.className = 'chat-message assistant-message';
-                        assistantMessage.innerHTML = DOMPurify.sanitize(marked.parse(mensagem.gpt));
-                        chatWindow.appendChild(assistantMessage);
+                        chatWindow.appendChild(createMessage(mensagem.usuario, 'user'));
+                        if (mensagem.gpt) {  // Só adiciona a resposta se existir
+                            chatWindow.appendChild(createMessage(mensagem.gpt, 'assistant', mensagem.id));
+                        }
                     });
 
                     chatWindow.scrollTop = chatWindow.scrollHeight;
                 })
-                .catch(error => {
-                    console.error('Erro ao carregar conversa:', error);
-                });
+                .catch(error => console.error('Erro ao carregar conversa:', error));
         }
-
         function sendMessage() {
             const message = userInput.value.trim();
+            if (!message) return;
+
             const conversaId = sessionStorage.getItem('conversa_id');
             const threadId = sessionStorage.getItem('thread_id');
-            const assistantId = sessionStorage.getItem('selected_assistant_id'); // Recupera o ID do assistente
+            const assistantId = sessionStorage.getItem('selected_assistant_id');
 
-            // Adiciona mensagem do usuário ao chat imediatamente
-            const userMessage = document.createElement('div');
-            userMessage.className = 'chat-message user-message';
-            userMessage.textContent = message;
-            chatWindow.appendChild(userMessage);
-            chatWindow.scrollTop = chatWindow.scrollHeight;
-
-            // Limpa a entrada do usuário
+            chatWindow.appendChild(createMessage(message, 'user'));
             userInput.value = '';
-
-            // Exibe mensagem de carregamento
-            const loadingMessage = document.createElement('div');
-            loadingMessage.className = 'chat-message assistant-message loading';
-            loadingMessage.textContent = 'Assistente está digitando...';
-            chatWindow.appendChild(loadingMessage);
+            updateTypingIndicator(true);
             chatWindow.scrollTop = chatWindow.scrollHeight;
 
-            // Faz a requisição ao servidor
             fetch('/chat', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    assistant_id: assistantId, // Inclui o ID do assistente
+                    assistant_id: assistantId,
                     message: message,
                     thread_id: threadId,
                     conversa_id: conversaId
@@ -165,64 +330,96 @@
             })
             .then(response => response.json())
             .then(data => {
-                chatWindow.removeChild(loadingMessage); // Remove mensagem de carregamento
+                if (data.status === 'pending') {
+                    // Armazena os IDs retornados
+                    sessionStorage.setItem('thread_id', data.thread_id);
+                    sessionStorage.setItem('conversa_id', data.conversa_id);
 
-                if (data.response) {
-                    if (data.conversa_id) {
-                        sessionStorage.setItem('conversa_id', data.conversa_id); // Atualiza a conversa
-                    }
-
-                    const assistantMessage = document.createElement('div');
-                    assistantMessage.className = 'chat-message assistant-message';
-                    assistantMessage.innerHTML = DOMPurify.sanitize(marked.parse(data.response));
-                    chatWindow.appendChild(assistantMessage);
-                    chatWindow.scrollTop = chatWindow.scrollHeight;
+                    pollRunStatus(data.thread_id, data.run_id, data.conversa_id, message);
                 } else if (data.error) {
+                    updateTypingIndicator(false);
                     alert('Erro: ' + data.error);
                 }
-            })
-            .catch(error => {
-                console.error('Erro ao enviar mensagem:', error);
-                chatWindow.removeChild(loadingMessage);
-                alert('Erro ao enviar mensagem. Por favor, tente novamente.');
             });
         }
 
+        function pollRunStatus(threadId, runId, conversaId, message) {
+            const checkStatus = () => {
+                fetch(`/check_run?thread_id=${threadId}&run_id=${runId}&conversa_id=${conversaId}&message=${encodeURIComponent(message)}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        console.log('Status polling response:', data);
 
+                        if (data.status === 'completed' && data.response) {
+                            updateTypingIndicator(false);
+                            chatWindow.appendChild(createMessage(data.response, 'assistant', data.mensagem_id));
+                            chatWindow.scrollTop = chatWindow.scrollHeight;
+                        } else if (data.status === 'failed' || data.error) {
+                            updateTypingIndicator(false);
+                            console.error('Erro:', data.error);
+                            alert('Erro ao processar mensagem: ' + (data.error || 'Falha desconhecida'));
+                        } else if (['queued', 'in_progress', 'requires_action'].includes(data.status)) {
+                            // Continua polling
+                            setTimeout(checkStatus, 1000);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Erro no polling:', error);
+                        setTimeout(checkStatus, 1000);
+                    });
+            };
+
+            checkStatus();
+        }
+
+        // Event Listeners
         sendButton.addEventListener('click', sendMessage);
-        userInput.addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                sendMessage();
-            }
+        userInput.addEventListener('keypress', e => {
+            if (e.key === 'Enter') sendMessage();
         });
 
-        const newConversationButton = document.getElementById('new-conversation-button');
-        newConversationButton.addEventListener('click', () => {
-            fetch('/nova_conversa', { method: 'POST' })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        chatWindow.innerHTML = '';
+        document.getElementById('new-conversation-button').addEventListener('click', () => {
+            const assistantId = sessionStorage.getItem('selected_assistant_id');
 
+            fetch('/nova_conversa', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    assistant_id: assistantId
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                        chatWindow.innerHTML = '';
                         const conversaList = document.getElementById('conversa-list');
+
+                        if (conversaList.firstChild.className === 'no-conversations') {
+                            conversaList.innerHTML = '';
+                        }
+
                         const newConversaItem = document.createElement('li');
                         newConversaItem.className = 'conversa-item';
                         newConversaItem.setAttribute('data-conversa-id', data.conversa_id);
-                        newConversaItem.textContent = `Iniciada em: ${data.data_inicio}`;
+                        newConversaItem.innerHTML = `
+                            <i class="fas fa-comment-dots"></i>
+                            Iniciada em: ${data.data_inicio}
+                        `;
 
-                        newConversaItem.addEventListener('click', () => loadConversa(data.conversa_id));
+                        newConversaItem.addEventListener('click', () =>
+                            loadConversa(data.conversa_id)
+                        );
 
-                        conversaList.appendChild(newConversaItem);
-
+                        conversaList.insertBefore(newConversaItem, conversaList.firstChild);
                         sessionStorage.removeItem('conversa_id');
                         sessionStorage.removeItem('thread_id');
                     } else {
                         alert('Erro ao iniciar nova conversa: ' + data.error);
                     }
                 })
-                .catch(error => {
-                    console.error('Erro ao iniciar nova conversa:', error);
-                });
+                .catch(error => console.error('Erro ao iniciar nova conversa:', error));
         });
 
         document.querySelectorAll('.conversa-item').forEach(item => {
@@ -231,16 +428,36 @@
                 loadConversa(conversaId);
             });
         });
-        // Captura o assistant_id da query string
+
         const urlParams = new URLSearchParams(window.location.search);
         const assistantIdFromUrl = urlParams.get('assistant_id');
         if (assistantIdFromUrl) {
-            sessionStorage.setItem('selected_assistant_id', assistantIdFromUrl); // Salva no sessionStorage
+            sessionStorage.setItem('selected_assistant_id', assistantIdFromUrl);
         }
 
+        // Funções de exportar e limpar chat
+        clearButton.addEventListener('click', () => {
+            if (confirm('Tem certeza que deseja limpar esta conversa?')) {
+                chatWindow.innerHTML = '';
+            }
+        });
 
+        exportButton.addEventListener('click', () => {
+            const messages = Array.from(chatWindow.children).map(msg => {
+                const content = msg.querySelector('.message-content').textContent;
+                const time = msg.querySelector('.message-timestamp').textContent;
+                const type = msg.classList.contains('user-message') ? 'Usuário' : 'Assistente';
+                return `[${time}] ${type}: ${content}\n`;
+            }).join('\n');
 
-
+            const blob = new Blob([messages], { type: 'text/plain' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `chat-export-${new Date().toISOString().slice(0,10)}.txt`;
+            a.click();
+            window.URL.revokeObjectURL(url);
+        });
         {% endif %}
     </script>
 </body>

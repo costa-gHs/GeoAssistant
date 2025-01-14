@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Métricas de Uso</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='admin_styles.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <header>
+        <h1>Métricas de Uso por Usuário</h1>
+        <nav>
+            <!-- Seu menu de navegação aqui -->
+        </nav>
+    </header>
+
+    <main>
+        <div class="metrics-grid">
+            <div class="metric-card total-tokens">
+                <h3>Total de Tokens no Mês</h3>
+                <div id="totalTokensValue" class="metric-value">Carregando...</div>
+            </div>
+
+            <div class="metric-card total-conversas">
+                <h3>Total de Conversas</h3>
+                <div id="totalConversasValue" class="metric-value">Carregando...</div>
+            </div>
+        </div>
+
+        <div class="chart-container">
+            <canvas id="usageChart"></canvas>
+        </div>
+
+        <div class="table-container">
+            <table id="metricsTable">
+                <thead>
+                    <tr>
+                        <th>Usuário</th>
+                        <th>Total Tokens</th>
+                        <th>Total Conversas</th>
+                        <th>% do Limite</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- Preenchido via JavaScript -->
+                </tbody>
+            </table>
+        </div>
+    </main>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', async () => {
+            try {
+                const response = await fetch('/admin/api/metricas/uso_usuarios');
+                const data = await response.json();
+
+                // Atualizar métricas gerais
+                updateMetrics(data.metricas_gerais);
+
+                // Criar gráfico
+                createUsageChart(data.metricas_gerais);
+
+                // Preencher tabela
+                populateTable(data.metricas_gerais, data.tokens_mes_atual);
+            } catch (error) {
+                console.error('Erro ao carregar métricas:', error);
+            }
+        });
+
+        function updateMetrics(data) {
+            const totalConversas = data.reduce((acc, curr) => acc + curr.total_conversas, 0);
+
+            document.getElementById('totalConversasValue').textContent = totalConversas.toLocaleString();
+        }
+
+        function createUsageChart(data) {
+            const ctx = document.getElementById('usageChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: data.map(d => d.usuario_nome),
+                    datasets: [{
+                        label: 'Total de Tokens',
+                        data: data.map(d => d.total_tokens),
+                        backgroundColor: '#2c5282'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Quantidade de Tokens'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top'
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return `${context.dataset.label}: ${context.raw.toLocaleString()}`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function populateTable(metricas) {
+            const tbody = document.getElementById('metricsTable').getElementsByTagName('tbody')[0];
+            tbody.innerHTML = '';
+
+            metricas.forEach(metrica => {
+                const row = tbody.insertRow();
+                row.innerHTML = `
+                    <td>${metrica.usuario_nome}</td>
+                    <td>${metrica.total_conversas}</td>
+                    <td>${metrica.percentual_uso.toFixed(1)}%
+                        <small>de ${metrica.limite_mensal.toLocaleString()}</small></td>
+                    <td>
+                        <span class="status-badge ${getStatusClass(metrica.percentual_uso)}">
+                            ${getStatusText(metrica.percentual_uso)}
+                        </span>
+                    </td>
+                `;
+            });
+        }
+
+        function getStatusClass(percentual) {
+            if (percentual >= 90) return 'status-critical';
+            if (percentual >= 75) return 'status-warning';
+            return 'status-ok';
+        }
+
+        function getStatusText(percentual) {
+            if (percentual >= 90) return 'Crítico';
+            if (percentual >= 75) return 'Atenção';
+            return 'Normal';
+        }
+    </script>
+</body>
+</html>

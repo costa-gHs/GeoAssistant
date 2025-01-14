@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Gerenciador de Assistentes</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='admin_styles.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <header>
+        <h1>Administração</h1>
+        <nav>
+            <ul>
+                <li><a href="{{ url_for('home') }}">Home</a></li>
+                <li><a href="{{ url_for('admin_routes.dashboard') }}">Dashboard</a></li>
+                <li><a href="{{ url_for('admin_routes.gerenciar_assistentes') }}">Criar Assistente</a></li>
+                <li><a href="{{ url_for('admin_routes.listar_conversas') }}">Conversas</a></li>
+                <li><a href="{{ url_for('logout') }}">Logout</a></li>
+            </ul>
+        </nav>
+    </header>
+
+    <main>
+        <div class="assistants-container">
+            <!-- Formulário de Criação -->
+            <section class="create-assistant-section">
+                <h2>Criar Novo Assistente</h2>
+                <form id="assistantForm" class="assistant-form">
+                    <div class="form-group">
+                        <label for="name">Nome do Assistente:</label>
+                        <input type="text" id="name" name="name" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="model">Modelo:</label>
+                        <select id="model" name="model" required>
+                            <option value="gpt-4o">GPT-4o</option>
+                            <option value="gpt-4o-mini">GPT-4o-mini</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="description">Descrição:</label>
+                        <textarea id="description" name="description" rows="3"></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="instructions">Instruções:</label>
+                        <textarea id="instructions" name="instructions" rows="5"></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="file">Arquivos de Conhecimento:</label>
+                        <input type="file"
+                               id="file"
+                               name="file"
+                               multiple
+                               accept=".pdf,.txt,.md,.docx">
+                        <p class="file-info">Suporta arquivos CSV, TXT, PDF e DOC até 512MB</p>
+                        <div id="uploaded-files" class="file-list"></div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Ferramentas:</label>
+                        <div class="tools-grid">
+                            <label class="tool-checkbox">
+                                <input type="checkbox" name="tools" value="code_interpreter">
+                                Code Interpreter
+                            </label>
+                            <label class="tool-checkbox">
+                                <input type="checkbox" name="tools" value="retrieval">
+                                Retrieval
+                            </label>
+                            <label class="tool-checkbox">
+                                <input type="checkbox" name="tools" value="function_calling">
+                                Function Calling
+                            </label>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="submit-btn">
+                        <i class="fas fa-plus"></i> Criar Assistente
+                    </button>
+                </form>
+            </section>
+
+            <!-- Lista de Assistentes -->
+            <section class="assistants-list-section">
+                <h2>Assistentes Existentes</h2>
+                <div class="assistants-grid" id="assistantsList">
+                    {% for assistant in assistants %}
+                    <div class="assistant-card">
+                        <div class="assistant-header">
+                            <h3>{{ assistant.nome }}</h3>
+                            <span class="model-badge">{{ assistant.modelo }}</span>
+                        </div>
+                        <p class="assistant-company">{{ assistant.empresa }}</p>
+                        <div class="assistant-tools">
+                            {% for tool in assistant.tools %}
+                            <span class="tool-badge">{{ tool }}</span>
+                            {% endfor %}
+                        </div>
+                        <div class="assistant-actions">
+                            <button class="edit-btn" data-id="{{ assistant.id }}">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            <button class="delete-btn" data-id="{{ assistant.id }}">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <!-- Modal de Edição -->
+    <div id="editModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>Editar Assistente</h2>
+            <form id="editForm" class="assistant-form">
+                <input type="hidden" id="editId" name="id">
+                <!-- Campos similares ao formulário de criação -->
+            </form>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const assistantForm = document.getElementById('assistantForm');
+
+            const uploadedFiles = new Set();
+
+            async function handleFileUpload(file) {
+                const formData = new FormData();
+                formData.append('file', file);
+
+                try {
+                    const response = await fetch('/admin/api/assistants/upload-file', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    if (!response.ok) throw new Error('Erro no upload');
+
+                    const data = await response.json();
+                    uploadedFiles.add(data.file_id);
+
+                    // Atualizar lista visual de arquivos
+                    updateFileList(file.name, data.file_id);
+
+                    return data.file_id;
+                } catch (error) {
+                    console.error('Erro:', error);
+                    alert('Erro ao fazer upload do arquivo: ' + error.message);
+                }
+            }
+
+            document.getElementById('assistantForm').addEventListener('submit', async function(e) {
+                e.preventDefault();
+                const formData = new FormData(this);
+
+                try {
+                    // Primeiro faz upload do arquivo se existir
+                    const fileInput = document.getElementById('file');
+                    let fileId = null;
+
+                    if (fileInput.files.length > 0) {
+                        const fileFormData = new FormData();
+                        fileFormData.append('file', fileInput.files[0]);
+                        fileFormData.append('purpose', 'assistants');
+
+                        const fileResponse = await fetch('/admin/api/assistants/upload-file', {
+                            method: 'POST',
+                            body: fileFormData
+                        });
+
+                        if (!fileResponse.ok) throw new Error('Erro no upload do arquivo');
+                        const fileData = await fileResponse.json();
+                        fileId = fileData.file_id;
+                    }
+
+                    // Prepara dados do assistente
+                    const assistantData = {
+                        name: formData.get('name'),
+                        model: formData.get('model'),
+                        description: formData.get('description'),
+                        instructions: formData.get('instructions'),
+                        tools: Array.from(formData.getAll('tools')),
+                        file_ids: Array.from(uploadedFiles)
+                    };
+
+                    // Cria o assistente
+                    const response = await fetch('/admin/api/assistants', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(assistantData)
+                    });
+
+                    if (!response.ok) throw new Error('Erro ao criar assistente');
+
+                    // Recarrega a página após sucesso
+                    window.location.reload();
+
+                } catch (error) {
+                    console.error('Erro:', error);
+                    alert('Erro ao criar assistente: ' + error.message);
+                }
+            });
+
+            function updateFileList(fileName, fileId) {
+                const fileList = document.getElementById('uploaded-files');
+                const fileItem = document.createElement('div');
+                fileItem.className = 'file-item';
+                fileItem.innerHTML = `
+                    <span>${fileName}</span>
+                    <button onclick="removeFile('${fileId}')" class="remove-file">×</button>
+                `;
+                fileList.appendChild(fileItem);
+            }
+
+            function removeFile(fileId) {
+                uploadedFiles.delete(fileId);
+                // Atualizar a interface
+                const fileItems = document.querySelectorAll('.file-item');
+                fileItems.forEach(item => {
+                    if (item.querySelector('button').getAttribute('onclick').includes(fileId)) {
+                        item.remove();
+                    }
+                });
+            }
+
+            // Funções para edição e exclusão
+            document.querySelectorAll('.delete-btn').forEach(btn => {
+                btn.addEventListener('click', async function() {
+                    if (confirm('Tem certeza que deseja excluir este assistente?')) {
+                        const id = this.dataset.id;
+                        try {
+                            const response = await fetch(`/admin/api/assistants/${id}`, {
+                                method: 'DELETE'
+                            });
+                            if (!response.ok) throw new Error('Erro ao excluir');
+                            window.location.reload();
+                        } catch (error) {
+                            alert('Erro ao excluir assistente: ' + error.message);
+                        }
+                    }
+                });
+            });
+        });
+    </script>
+</body>
+</html>

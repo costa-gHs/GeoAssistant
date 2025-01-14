@@ -375,3 +375,130 @@ body {
         text-align: center;
     }
 }
+.message-feedback {
+    display: flex;
+    gap: 8px;
+    margin-top: 16px;
+    border-top: 1px solid #e5e7eb;
+    padding-top: 12px;
+}
+
+.feedback-btn {
+    background-color: #f9fafb;
+    border: 1px solid #e5e7eb;
+    padding: 8px 16px;
+    border-radius: 20px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.875rem;
+    color: #4b5563;
+}
+
+.feedback-btn:hover {
+    background-color: #f3f4f6;
+    border-color: #d1d5db;
+    transform: translateY(-1px);
+}
+
+.feedback-btn.active {
+    background-color: #e5e7eb;
+    border-color: #9ca3af;
+}
+
+.feedback-btn.like.active {
+    background-color: #ecfdf5;
+    border-color: #34d399;
+    color: #065f46;
+}
+
+.feedback-btn.dislike.active {
+    background-color: #fef2f2;
+    border-color: #f87171;
+    color: #991b1b;
+}
+
+.feedback-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.modal-content {
+    background: white;
+    padding: 24px;
+    border-radius: 12px;
+    width: 90%;
+    max-width: 500px;
+    box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1);
+}
+
+.modal-content h3 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: #1f2937;
+    margin-bottom: 4px;
+}
+
+.modal-content p {
+    color: #6b7280;
+    margin-bottom: 16px;
+    font-size: 0.875rem;
+}
+
+.modal-content textarea {
+    width: 100%;
+    height: 120px;
+    padding: 12px;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    margin-bottom: 16px;
+    resize: vertical;
+    font-size: 0.875rem;
+}
+
+.modal-content textarea:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+}
+
+.modal-buttons {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+}
+
+.modal-btn {
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+}
+
+.modal-btn.skip {
+    background: white;
+    border: 1px solid #e5e7eb;
+    color: #6b7280;
+}
+
+.modal-btn.submit {
+    background: #3b82f6;
+    border: 1px solid transparent;
+    color: white;
+}
+
+.modal-btn:hover {
+    opacity: 0.9;
+}
