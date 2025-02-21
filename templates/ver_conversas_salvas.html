@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visualizador Simples de Conversas</title>
+    <style>
+        body { font-family: Arial; margin: 20px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .status-item { margin: 5px 0; padding: 5px; border: 1px solid #ddd; }
+        .message { margin: 10px 0; padding: 10px; background: #f5f5f5; }
+        .sim { color: green; }
+        .nao { color: red; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <input type="file" accept=".txt" onchange="loadFile(this.files[0])">
+        <div id="output"></div>
+    </div>
+
+    <script>
+        function loadFile(file) {
+            if (!file) return;
+
+            const reader = new FileReader();
+
+            reader.onload = function(e) {
+                const content = e.target.result;
+                const output = document.getElementById('output');
+
+                // Limpa o output anterior
+                output.innerHTML = '';
+
+                try {
+                    // Extrai o ID, Data e Hora
+                    const idMatch = content.match(/ID da Conversa: (\d+)/);
+                    const dataMatch = content.match(/Data: ([^\n]+)/);
+                    const horaMatch = content.match(/Hora: ([^\n]+)/);
+
+                    const id = idMatch ? idMatch[1] : 'N/A';
+                    const data = dataMatch ? dataMatch[1] : 'N/A';
+                    const hora = horaMatch ? horaMatch[1] : 'N/A';
+
+                    // Adiciona cabeçalho
+                    output.innerHTML += `
+                        <h2>Conversa #${id}</h2>
+                        <p>${data} às ${hora}</p>
+                    `;
+
+                    // Extrai e mostra status técnico
+                    output.innerHTML += '<h3>Status Técnico</h3>';
+                    const statusLines = content.match(/\d+\.\s+[^:]+:\s*(Sim|Não)/g);
+                    if (statusLines) {
+                        statusLines.forEach(line => {
+                            const [status, value] = line.split(':').map(s => s.trim());
+                            const cleanStatus = status.replace(/^\d+\.\s+/, '');
+                            output.innerHTML += `
+                                <div class="status-item">
+                                    <span>${cleanStatus}:</span>
+                                    <span class="${value.toLowerCase()}">${value}</span>
+                                </div>
+                            `;
+                        });
+                    }
+
+                    // Extrai e mostra mensagens
+                    output.innerHTML += '<h3>Mensagens</h3>';
+                    const messages = content.match(/\[\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2}\][\s\S]+?(?=\[|$)/g);
+                    if (messages) {
+                        messages.forEach(msg => {
+                            const timeMatch = msg.match(/\[(.*?)\]/);
+                            const time = timeMatch ? timeMatch[1] : '';
+                            const content = msg.replace(/\[.*?\]/, '').trim();
+
+                            output.innerHTML += `
+                                <div class="message">
+                                    <div><strong>${time}</strong></div>
+                                    <div>${content}</div>
+                                </div>
+                            `;
+                        });
+                    }
+
+                } catch (error) {
+                    output.innerHTML = `<p style="color: red;">Erro ao processar arquivo: ${error.message}</p>`;
+                }
+            };
+
+            reader.readAsText(file);
+        }
+    </script>
+</body>
+</html>

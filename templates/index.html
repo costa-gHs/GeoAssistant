@@ -3,461 +3,563 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Chat com Assistente</title>
+    <title>GeoCarbonite - Chat Assistente</title>
+
+    <!-- CSS Principal -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='base.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='chat_styles.css') }}">
+
+    <!-- Bibliotecas Externas CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/styles/github.min.css">
+
+    <!-- Scripts Essenciais Sem Defer -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/dompurify@2.4.0/dist/purify.min.js"></script>
+
+    <!-- Highlight.js com Inicialização Atrasada -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/highlight.min.js"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script>hljs.initHighlightingOnLoad();</script>
 </head>
 <body>
-    {% if 'api_key' not in session %}
-    <div class="no-api-key-container">
-        <div class="no-api-key-card">
-            <h1>Insira sua OpenAI API Key</h1>
-            <p>Para começar a conversar com seu assistente de IA, é necessário informar sua API Key.</p>
-            <input type="password" id="api-key-input" placeholder="OpenAI API Key" autocomplete="off">
-            <button id="api-key-button">Enviar</button>
+    <div class="premodal-container">
+        <div class="diagnostic-header">
+            <h2>Colheitadeira CH570 - Pré-Diagnóstico</h2>
+            <p>Selecione os problemas observados:</p>
         </div>
+
+        <div class="checklist-container">
+            <label class="checklist-item">
+                <input type="checkbox" name="issue" value="hydraulic_leak">
+                <div class="checklist-content">
+                    <span class="checklist-label">Vazamento de óleo hidráulico</span>
+                    <span class="checklist-details">Vazamentos visíveis ou nível baixo no reservatório</span>
+                </div>
+            </label>
+
+            <label class="checklist-item">
+                <input type="checkbox" name="issue" value="engine_temp">
+                <div class="checklist-content">
+                    <span class="checklist-label">Temperatura do motor elevada</span>
+                    <span class="checklist-details">Acima de 95°C ou alarme ativo</span>
+                </div>
+            </label>
+
+            <label class="checklist-item">
+                <input type="checkbox" name="issue" value="harvester_vibration">
+                <div class="checklist-content">
+                    <span class="checklist-label">Vibração anormal</span>
+                    <span class="checklist-details">Durante operação ou em marcha lenta</span>
+                </div>
+            </label>
+
+            <label class="checklist-item">
+                <input type="checkbox" name="issue" value="cutting_system">
+                <div class="checklist-content">
+                    <span class="checklist-label">Problemas no sistema de corte</span>
+                    <span class="checklist-details">Dificuldade no corte ou ruídos anormais</span>
+                </div>
+            </label>
+
+            <label class="checklist-item">
+                <input type="checkbox" name="issue" value="feed_system">
+                <div class="checklist-content">
+                    <span class="checklist-label">Sistema de alimentação</span>
+                    <span class="checklist-details">Irregularidades na entrada de cana</span>
+                </div>
+            </label>
+
+            <label class="checklist-item">
+                <input type="checkbox" name="issue" value="electrical_system">
+                <div class="checklist-content">
+                    <span class="checklist-label">Sistema elétrico</span>
+                    <span class="checklist-details">Falhas intermitentes ou alertas no painel</span>
+                </div>
+            </label>
+
+            <label class="checklist-item">
+                <input type="checkbox" name="issue" value="elevator_system">
+                <div class="checklist-content">
+                    <span class="checklist-label">Sistema do elevador</span>
+                    <span class="checklist-details">Problemas na descarga ou transporte</span>
+                </div>
+            </label>
+
+            <label class="checklist-item">
+                <input type="checkbox" name="issue" value="track_system">
+                <div class="checklist-content">
+                    <span class="checklist-label">Sistema de esteiras</span>
+                    <span class="checklist-details">Desgaste excessivo ou desalinhamento</span>
+                </div>
+            </label>
+        </div>
+
+        <button id="startDiagnostic" class="diagnostic-submit" disabled>
+            Iniciar Diagnóstico
+        </button>
     </div>
-    {% else %}
-    <header class="chat-header-bar">
-        <div class="chat-header-container">
-            <span class="chat-brand">InteliPro GeoCarbonite</span>
-            <nav class="chat-nav">
+    <!-- Etapa 2: Interface de Chat -->
+    <div id="chatContainer" class="main-container" style="display: none;">
+        <header class="chat-header">
+            <div class="header-content">
+                <div class="brand">
+                    <i class="fas fa-tractor"></i>
+                    <span>GeoCarbonite</span>
+                    <div class="status-indicator"></div>
+                </div>
+            </div>
+            <nav class="nav-links">
                 <a href="{{ url_for('home') }}">Home</a>
-                <button id="new-conversation-button" class="primary-button">
-                    <i class="fas fa-plus"></i> Nova Conversa
-                </button>
-                <a href="{{ url_for('logout') }}" class="logout-button">
-                    <i class="fas fa-sign-out-alt"></i> Logout
-                </a>
+                {% if session['is_admin'] %}
+                    <a href="{{ url_for('admin_routes.dashboard') }}" class="admin-link">Admin</a>
+                {% endif %}
+                <a href="{{ url_for('logout') }}">Logout</a>
             </nav>
-        </div>
-    </header>
+        </header>
 
-    <div id="app-container">
-        <aside class="sidebar">
-            <h2><i class="fas fa-history"></i> Histórico de Conversas</h2>
-            <ul id="conversa-list">
-                {% for conversa in historico %}
-                    <li data-conversa-id="{{ conversa.conversa_id }}" class="conversa-item">
-                        <i class="fas fa-comment-dots"></i>
-                        Iniciada em: {{ conversa.data_inicio.strftime('%d/%m/%Y %H:%M') }}
-                    </li>
-                {% else %}
-                    <li class="no-conversations">Nenhuma conversa anterior</li>
-                {% endfor %}
-            </ul>
-        </aside>
+        <div class="content-grid">
 
-        <div id="chat-container" class="chat-container">
-            <main id="chat-window" class="chat-window"></main>
-            <footer class="chat-input">
-                <div class="input-container">
-                    <input type="text" id="user-input" placeholder="Digite sua mensagem..." autocomplete="off">
-                    <div class="chat-controls">
-                        <button class="control-button" id="clear-chat" title="Limpar conversa">
-                            <i class="fas fa-trash"></i>
-                        </button>
-                        <button class="control-button" id="export-chat" title="Exportar conversa">
-                            <i class="fas fa-download"></i>
-                        </button>
+            <!-- Painel de Sistemas -->
+            <aside class="systems-panel">
+                <h3><i class="fas fa-cogs"></i> Sistemas</h3>
+                <div class="system-card critical">
+                    <div class="card-header">
+                        <i class="fas fa-tint"></i>
+                        <h4>Sistema Hidráulico</h4>
                     </div>
-                    <button id="send-button" class="primary-button">
+                    <div class="checklist">
+                        <div class="check-item">
+                            <div class="status checked"></div>
+                            <span>Pressão da bomba</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="system-card critical">
+                    <div class="card-header">
+                        <i class="fas fa-bolt"></i>
+                        <h4>Sistema Elétrico</h4>
+                    </div>
+                    <div class="checklist">
+                        <div class="check-item">
+                            <div class="status checked"></div>
+                            <span>Status Bateria</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="system-card critical">
+                    <div class="card-header">
+                        <i class="fas fa-fire"></i>
+                        <h4>Sistema Combustão</h4>
+                    </div>
+                    <div class="checklist">
+                        <div class="check-item">
+                            <div class="status checked"></div>
+                            <span>Nível de combustivel</span>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- Área de Chat -->
+            <main class="chat-area">
+                <div id="chat-window" class="chat-messages">
+                    <div class="context-message">
+                        <div class="context-header">
+                            <i class="fas fa-info-circle"></i>
+                            Contexto da Máquina
+                        </div>
+                        <div class="context-content">
+                            Modelo: Colhedora CH-570<br>
+                            Marca: John Deer
+                        </div>
+                    </div>
+                </div>
+
+                <div class="chat-input">
+                    <input type="text" id="user-input" placeholder="Descreva o problema...">
+                    <button id="send-button" class="btn-primary">
                         <i class="fas fa-paper-plane"></i>
                     </button>
+                    <button id="downloadButton" class="btn-primary">
+                        <i class="fas fa-download"></i>
+                    </button>
                 </div>
-            </footer>
+            </main>
         </div>
     </div>
-    {% endif %}
+<script>
+    // Configuração do Marked
+    marked.setOptions({
+        highlight: (code, lang) => hljs.highlightAuto(code).value,
+        breaks: true,
+        gfm: true
+    });
 
-    <script>
-        // Configuração do Marked
-        marked.setOptions({
-            highlight: function(code, lang) {
-                return hljs.highlightAuto(code).value;
-            },
-            breaks: true,
-            gfm: true
-        });
+    // Funções auxiliares
+    const formatTimestamp = () => new Date().toLocaleTimeString('pt-BR', {
+        hour: '2-digit',
+        minute: '2-digit'
+    });
 
-        // Função para formatar timestamp
-        function formatTimestamp() {
-            return new Date().toLocaleTimeString('pt-BR', {
-                hour: '2-digit',
-                minute: '2-digit'
-            });
-        }
+    // Controle do Checklist
+    document.addEventListener('DOMContentLoaded', () => {
+        const checkboxes = document.querySelectorAll('input[name="issue"]');
+        const startButton = document.getElementById('startDiagnostic');
 
-        {% if 'api_key' not in session %}
-        // Código para API Key
-        const apiKeyInput = document.getElementById('api-key-input');
-        const apiKeyButton = document.getElementById('api-key-button');
-
-        apiKeyButton.addEventListener('click', () => {
-            const apiKey = apiKeyInput.value.trim();
-            if (apiKey) {
-                fetch('/set_api_key', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ api_key: apiKey })
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        window.location.reload();
-                    } else {
-                        alert('Falha ao definir a API key: ' + data.message);
-                    }
-                })
-                .catch(error => {
-                    console.error('Erro:', error);
-                    alert('Erro ao definir a API key.');
+        // Coletar dados do checklist (mantido)
+        const collectChecklistData = () => {
+            return Array.from(checkboxes)
+                .filter(cb => cb.checked)
+                .map(cb => {
+                    const item = cb.closest('.checklist-item');
+                    return {
+                        problema: item.querySelector('.checklist-label').textContent,
+                        detalhes: item.querySelector('.checklist-details').textContent
+                    };
                 });
-            } else {
-                alert('Por favor, insira sua OpenAI API Key.');
-            }
+        };
+
+        // Função corrigida
+        const generateTechnicalContext = (problems) => {
+            return `🚨 PROBLEMAS RELATADOS NA CH570:\n${
+                problems.map(p =>
+                    `• ${p.problema}\n   → ${p.detalhes}`
+                ).join('\n')
+            }`;
+        };
+
+
+        // Evento de envio atualizado
+        checkboxes.forEach(checkbox => {
+            checkbox.addEventListener('change', () => {
+                startButton.disabled = !Array.from(checkboxes).some(cb => cb.checked);
+            });
         });
-        {% else %}
-        const chatWindow = document.getElementById('chat-window');
-        const userInput = document.getElementById('user-input');
-        const sendButton = document.getElementById('send-button');
-        const clearButton = document.getElementById('clear-chat');
-        const exportButton = document.getElementById('export-chat');
 
-        function createMessage(content, type, messageId) {
-            const messageDiv = document.createElement('div');
-            messageDiv.className = `chat-message ${type}-message`;
-            messageDiv.dataset.messageId = messageId;
-
-            const messageContent = document.createElement('div');
-            messageContent.className = 'message-content';
-
-            if (type === 'assistant') {
-                messageContent.innerHTML = DOMPurify.sanitize(marked.parse(content));
-
-                const feedbackDiv = document.createElement('div');
-                feedbackDiv.className = 'message-feedback';
-                feedbackDiv.innerHTML = `
-                    <button class="feedback-btn like" title="Resposta útil">
-                        <i class="fas fa-thumbs-up"></i>
-                        <span>Útil</span>
-                    </button>
-                    <button class="feedback-btn dislike" title="Resposta não útil">
-                        <i class="fas fa-thumbs-down"></i>
-                        <span>Não útil</span>
-                    </button>
-                `;
-
-                messageDiv.appendChild(messageContent);
-                messageDiv.appendChild(feedbackDiv);
-
-                const likeBtn = feedbackDiv.querySelector('.like');
-                const dislikeBtn = feedbackDiv.querySelector('.dislike');
-
-                likeBtn.addEventListener('click', () => handleFeedback(true, messageId, likeBtn, dislikeBtn));
-                dislikeBtn.addEventListener('click', () => handleFeedback(false, messageId, likeBtn, dislikeBtn));
-            } else {
-                messageContent.textContent = content;
-                messageDiv.appendChild(messageContent);
-            }
-
-            const timestamp = document.createElement('div');
-            timestamp.className = 'message-timestamp';
-            timestamp.textContent = formatTimestamp();
-            messageDiv.appendChild(timestamp);
-
-            return messageDiv;
-        }
-
-        function handleFeedback(isLike, messageId, likeBtn, dislikeBtn) {
-            likeBtn.classList.remove('active');
-            dislikeBtn.classList.remove('active');
-
-            if (isLike) {
-                likeBtn.classList.add('active');
-                saveFeedback(messageId, true);
-                showToast('Obrigado pelo feedback!', 'success');
-            } else {
-                dislikeBtn.classList.add('active');
-                showFeedbackModal(messageId);
-            }
-        }
-
-        function showFeedbackModal(messageId) {
-            const modal = document.createElement('div');
-            modal.className = 'feedback-modal';
-            modal.innerHTML = `
-                <div class="modal-content">
-                    <div class="modal-header">
-                        <h3>Ajude-nos a melhorar</h3>
-                        <p>Por que esta resposta não foi útil?</p>
-                    </div>
-                    <textarea placeholder="Descreva o que poderia ser melhor (opcional)"></textarea>
-                    <div class="modal-buttons">
-                        <button class="modal-btn skip">Pular</button>
-                        <button class="modal-btn submit">Enviar feedback</button>
-                    </div>
-                </div>
-            `;
-
-            document.body.appendChild(modal);
-
-            const textarea = modal.querySelector('textarea');
-            const skipBtn = modal.querySelector('.skip');
-            const submitBtn = modal.querySelector('.submit');
-
-            skipBtn.addEventListener('click', () => {
-                saveFeedback(messageId, false);
-                modal.remove();
-                showToast('Feedback registrado', 'success');
-            });
-
-            submitBtn.addEventListener('click', () => {
-                saveFeedback(messageId, false, textarea.value);
-                modal.remove();
-                showToast('Obrigado pelo seu feedback!', 'success');
-            });
-
-            modal.addEventListener('click', (e) => {
-                if (e.target === modal) modal.remove();
-            });
-        }
-
-        function showToast(message, type = 'success') {
-            const toast = document.createElement('div');
-            toast.className = `feedback-toast ${type}`;
-            toast.innerHTML = `
-                <i class="fas fa-${type === 'success' ? 'check-circle' : 'exclamation-circle'}"></i>
-                <span>${message}</span>
-            `;
-
-            document.body.appendChild(toast);
-
-            setTimeout(() => {
-                toast.style.animation = 'slideOut 0.3s ease forwards';
-                setTimeout(() => toast.remove(), 300);
-            }, 3000);
-        }
-
-        async function saveFeedback(messageId, isLike, comentario = '') {
+        // Handler para iniciar diagnóstico
+        startButton.addEventListener('click', async () => {
             try {
-                const response = await fetch('/feedback', {
+                const problems = collectChecklistData();
+                if (problems.length === 0) {
+                    alert('Selecione pelo menos um problema!');
+                    return;
+                }
+
+                const formattedContext = generateTechnicalContext(problems);
+                console.log('Contexto técnico gerado:', formattedContext); // Debug
+
+                // Guardar o contexto no sessionStorage
+                sessionStorage.setItem('technicalContext', formattedContext);
+
+                const assistantId = new URLSearchParams(window.location.search).get('assistant_id');
+                const response = await fetch('/nova_conversa', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        mensagem_id: messageId,
-                        tipo: isLike,
-                        comentario: comentario
+                        assistant_id: assistantId,
+                        contexto_tecnico: formattedContext
                     })
                 });
 
-                if (!response.ok) throw new Error('Erro ao salvar feedback');
+                const data = await response.json();
+                if(data.success) {
+                    sessionStorage.setItem('conversa_id', data.conversa_id);
+                    sessionStorage.setItem('thread_id', data.thread_id);
+                    sessionStorage.setItem('selected_assistant_id', assistantId);
+
+                    // Transição visual
+                    document.querySelector('.premodal-container').style.display = 'none';
+                    document.getElementById('chatContainer').style.display = 'block';
+
+                    // Adicionar contexto visualmente
+                    const contextDiv = document.createElement('div');
+                    contextDiv.className = 'context-message';
+                    contextDiv.innerHTML = `
+                        <div class="context-header">
+                            <i class="fas fa-exclamation-triangle"></i> Relatório Inicial
+                        </div>
+                        <div class="context-content">
+                            ${formattedContext.replace(/\n/g, '<br>')}
+                        </div>
+                    `;
+                    document.getElementById('chat-window').appendChild(contextDiv);
+                }
             } catch (error) {
                 console.error('Erro:', error);
-                showToast('Erro ao salvar feedback', 'error');
+                alert('Ocorreu um erro. Por favor, recarregue a página e tente novamente.');
             }
+        });
+    });
+    // Sistema principal de chat
+    {% if 'api_key' in session %}
+    const chatWindow = document.getElementById('chat-window');
+    const userInput = document.getElementById('user-input');
+    const sendButton = document.getElementById('send-button');
+
+    async function downloadConversation() {
+        const conversaId = sessionStorage.getItem('conversa_id');
+        if (!conversaId) {
+            console.error('ID da conversa não encontrado');
+            return;
         }
 
-        function updateTypingIndicator(show) {
-            const existingIndicator = document.querySelector('.typing-indicator');
-            if (show && !existingIndicator) {
-                const indicator = document.createElement('div');
-                indicator.className = 'chat-message assistant-message typing-indicator';
-                indicator.innerHTML = `
-                    <div class="typing-dots">
-                        <span></span><span></span><span></span>
-                    </div>
-                `;
-                chatWindow.appendChild(indicator);
-                chatWindow.scrollTop = chatWindow.scrollHeight;
-            } else if (!show && existingIndicator) {
-                existingIndicator.remove();
+        try {
+            const response = await fetch(`/conversa/${conversaId}`);
+            const data = await response.json();
+
+            if (!data.mensagens) {
+                throw new Error('Nenhuma mensagem encontrada');
             }
-        }
 
-        function loadConversa(conversaId) {
-            fetch(`/conversa/${conversaId}`)
-                .then(response => response.json())
-                .then(data => {
-                    if (data.error) {
-                        alert('Erro: ' + data.error);
-                        return;
-                    }
+            // Formatar o conteúdo
+            let content = '=== RELATÓRIO DE CONVERSA ===\n\n';
 
-                    // Limpar o chat antes de adicionar as mensagens
-                    chatWindow.innerHTML = '';
+            // Adicionar relatório técnico se existir
+            const relatorioTecnico = sessionStorage.getItem('preChatResponses');
+            if (relatorioTecnico) {
+                content += '=== RELATÓRIO TÉCNICO ===\n';
+                content += relatorioTecnico + '\n\n';
+            }
 
-                    sessionStorage.setItem('thread_id', data.thread_id);
-                    sessionStorage.setItem('conversa_id', conversaId);
+            // Adicionar informações da conversa
+            content += `Data: ${new Date().toLocaleDateString()}\n`;
+            content += `Hora: ${new Date().toLocaleTimeString()}\n`;
+            content += `ID da Conversa: ${conversaId}\n`;
+            content += `Usuário: ${sessionStorage.getItem('usuario_nome')}\n\n`;
 
-                    data.mensagens.forEach(mensagem => {
-                        chatWindow.appendChild(createMessage(mensagem.usuario, 'user'));
-                        if (mensagem.gpt) {  // Só adiciona a resposta se existir
-                            chatWindow.appendChild(createMessage(mensagem.gpt, 'assistant', mensagem.id));
-                        }
-                    });
-
-                    chatWindow.scrollTop = chatWindow.scrollHeight;
-                })
-                .catch(error => console.error('Erro ao carregar conversa:', error));
-        }
-        function sendMessage() {
-            const message = userInput.value.trim();
-            if (!message) return;
-
-            const conversaId = sessionStorage.getItem('conversa_id');
-            const threadId = sessionStorage.getItem('thread_id');
-            const assistantId = sessionStorage.getItem('selected_assistant_id');
-
-            chatWindow.appendChild(createMessage(message, 'user'));
-            userInput.value = '';
-            updateTypingIndicator(true);
-            chatWindow.scrollTop = chatWindow.scrollHeight;
-
-            fetch('/chat', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    assistant_id: assistantId,
-                    message: message,
-                    thread_id: threadId,
-                    conversa_id: conversaId
-                })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.status === 'pending') {
-                    // Armazena os IDs retornados
-                    sessionStorage.setItem('thread_id', data.thread_id);
-                    sessionStorage.setItem('conversa_id', data.conversa_id);
-
-                    pollRunStatus(data.thread_id, data.run_id, data.conversa_id, message);
-                } else if (data.error) {
-                    updateTypingIndicator(false);
-                    alert('Erro: ' + data.error);
-                }
+            // Adicionar mensagens
+            content += '=== MENSAGENS ===\n\n';
+            data.mensagens.forEach(msg => {
+                content += `[${msg.data_hora_envio}]\n`;
+                content += `Usuário: ${msg.usuario}\n`;
+                content += `Assistente: ${msg.gpt}\n\n`;
             });
-        }
 
-        function pollRunStatus(threadId, runId, conversaId, message) {
-            const checkStatus = () => {
-                fetch(`/check_run?thread_id=${threadId}&run_id=${runId}&conversa_id=${conversaId}&message=${encodeURIComponent(message)}`)
-                    .then(response => response.json())
-                    .then(data => {
-                        console.log('Status polling response:', data);
-
-                        if (data.status === 'completed' && data.response) {
-                            updateTypingIndicator(false);
-                            chatWindow.appendChild(createMessage(data.response, 'assistant', data.mensagem_id));
-                            chatWindow.scrollTop = chatWindow.scrollHeight;
-                        } else if (data.status === 'failed' || data.error) {
-                            updateTypingIndicator(false);
-                            alert('Erro ao processar mensagem: ' + (data.error || 'Falha desconhecida'));
-                        } else {
-                            // Continua polling
-                            setTimeout(checkStatus, 1000);
-                        }
-                    })
-                    .catch(error => {
-                        console.error('Erro no polling:', error);
-                        setTimeout(checkStatus, 1000);
-                    });
-            };
-
-            checkStatus();
-        }
-
-        // Event Listeners
-        sendButton.addEventListener('click', sendMessage);
-        userInput.addEventListener('keypress', e => {
-            if (e.key === 'Enter') sendMessage();
-        });
-
-        document.getElementById('new-conversation-button').addEventListener('click', () => {
-            const assistantId = sessionStorage.getItem('selected_assistant_id');
-
-            fetch('/nova_conversa', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    assistant_id: assistantId
-                })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                        chatWindow.innerHTML = '';
-                        const conversaList = document.getElementById('conversa-list');
-
-                        if (conversaList.firstChild.className === 'no-conversations') {
-                            conversaList.innerHTML = '';
-                        }
-
-                        const newConversaItem = document.createElement('li');
-                        newConversaItem.className = 'conversa-item';
-                        newConversaItem.setAttribute('data-conversa-id', data.conversa_id);
-                        newConversaItem.innerHTML = `
-                            <i class="fas fa-comment-dots"></i>
-                            Iniciada em: ${data.data_inicio}
-                        `;
-
-                        newConversaItem.addEventListener('click', () =>
-                            loadConversa(data.conversa_id)
-                        );
-
-                        conversaList.insertBefore(newConversaItem, conversaList.firstChild);
-                        sessionStorage.removeItem('conversa_id');
-                        sessionStorage.removeItem('thread_id');
-                    } else {
-                        alert('Erro ao iniciar nova conversa: ' + data.error);
-                    }
-                })
-                .catch(error => console.error('Erro ao iniciar nova conversa:', error));
-        });
-
-        document.querySelectorAll('.conversa-item').forEach(item => {
-            item.addEventListener('click', () => {
-                const conversaId = item.getAttribute('data-conversa-id');
-                loadConversa(conversaId);
-            });
-        });
-
-        const urlParams = new URLSearchParams(window.location.search);
-        const assistantIdFromUrl = urlParams.get('assistant_id');
-        if (assistantIdFromUrl) {
-            sessionStorage.setItem('selected_assistant_id', assistantIdFromUrl);
-        }
-
-        // Funções de exportar e limpar chat
-        clearButton.addEventListener('click', () => {
-            if (confirm('Tem certeza que deseja limpar esta conversa?')) {
-                chatWindow.innerHTML = '';
-            }
-        });
-
-        exportButton.addEventListener('click', () => {
-            const messages = Array.from(chatWindow.children).map(msg => {
-                const content = msg.querySelector('.message-content').textContent;
-                const time = msg.querySelector('.message-timestamp').textContent;
-                const type = msg.classList.contains('user-message') ? 'Usuário' : 'Assistente';
-                return `[${time}] ${type}: ${content}\n`;
-            }).join('\n');
-
-            const blob = new Blob([messages], { type: 'text/plain' });
+            // Criar e baixar o arquivo
+            const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `chat-export-${new Date().toISOString().slice(0,10)}.txt`;
+            a.download = `conversa_${conversaId}.txt`;
+            document.body.appendChild(a);
             a.click();
+            document.body.removeChild(a);
             window.URL.revokeObjectURL(url);
+
+        } catch (error) {
+            console.error('Erro ao baixar conversa:', error);
+            alert('Erro ao baixar a conversa. Por favor, tente novamente.');
+        }
+    }
+
+    // Função para criar indicador de digitação
+    function createTypingIndicator() {
+        const indicator = document.createElement('div');
+        indicator.className = 'typing-indicator';
+
+        const avatar = document.createElement('div');
+        avatar.className = 'typing-avatar';
+        avatar.innerHTML = '<i class="fas fa-robot"></i>';
+
+        const dots = document.createElement('div');
+        dots.className = 'typing-dots';
+
+        for (let i = 0; i < 3; i++) {
+            const dot = document.createElement('div');
+            dot.className = 'typing-dot';
+            dots.appendChild(dot);
+        }
+
+        const text = document.createElement('div');
+        text.className = 'typing-text';
+        text.textContent = 'Analisando diagnóstico...';
+
+        indicator.appendChild(avatar);
+        indicator.appendChild(dots);
+        indicator.appendChild(text);
+
+        return indicator;
+    }
+
+    function createMessage(content, type, messageId) {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `chat-message ${type}-message`;
+        messageDiv.dataset.messageId = messageId;
+
+        const messageContent = document.createElement('div');
+        messageContent.className = 'message-content';
+
+        if (type === 'assistant') {
+            messageContent.innerHTML = DOMPurify.sanitize(marked.parse(content));
+
+            // Adicionar sistema de feedback
+            const feedbackDiv = document.createElement('div');
+            feedbackDiv.className = 'message-feedback';
+            feedbackDiv.innerHTML = `
+                <button class="feedback-btn like" title="Resposta útil">
+                    <i class="fas fa-thumbs-up"></i>
+                    <span>Útil</span>
+                </button>
+                <button class="feedback-btn dislike" title="Resposta não útil">
+                    <i class="fas fa-thumbs-down"></i>
+                    <span>Não útil</span>
+                </button>
+            `;
+
+            // Eventos de feedback
+            feedbackDiv.querySelector('.like').addEventListener('click', () =>
+                handleFeedback(true, messageId));
+            feedbackDiv.querySelector('.dislike').addEventListener('click', () =>
+                handleFeedback(false, messageId));
+
+            messageDiv.append(messageContent, feedbackDiv);
+        } else {
+            messageContent.textContent = content;
+            messageDiv.appendChild(messageContent);
+        }
+
+        // Timestamp
+        const timestamp = document.createElement('div');
+        timestamp.className = 'message-timestamp';
+        timestamp.textContent = formatTimestamp();
+        messageDiv.appendChild(timestamp);
+
+        return messageDiv;
+    }
+    const urlParams = new URLSearchParams(window.location.search);
+    const assistantId = urlParams.get('assistant_id');
+
+    // Sistema de feedback
+    function handleFeedback(isLike, messageId) {
+        fetch('/feedback', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                mensagem_id: messageId,
+                tipo: isLike
+            })
+        })
+        .then(() => showToast(isLike ? 'Obrigado pelo feedback positivo!' : 'Feedback negativo registrado'))
+        .catch(error => console.error('Erro ao enviar feedback:', error));
+    }
+
+    // Envio de mensagens
+    function sendMessage() {
+        const message = userInput.value.trim();
+        if (!message) return;
+
+        // Obter IDs do sessionStorage
+        const assistantId = sessionStorage.getItem('selected_assistant_id');
+        const threadId = sessionStorage.getItem('thread_id');
+        const conversaId = sessionStorage.getItem('conversa_id');
+        const technicalContext = sessionStorage.getItem('technicalContext');
+
+        // Verificar se todos os IDs estão presentes
+        if (!assistantId || !threadId || !conversaId) {
+            alert('Erro de configuração da conversa. Recarregue a página.');
+            return;
+        }
+
+        // Adicionar mensagem do usuário
+        chatWindow.appendChild(createMessage(message, 'user'));
+        userInput.value = '';
+
+        // Adicionar indicador de digitação
+        const typingIndicator = createTypingIndicator();
+        chatWindow.appendChild(typingIndicator);
+        chatWindow.scrollTop = chatWindow.scrollHeight;
+
+        // Enviar para o backend
+        fetch('/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                assistant_id: assistantId,
+                message: message,
+                thread_id: threadId,
+                conversa_id: conversaId,
+                technical_context: technicalContext // Adicionando o contexto técnico
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'pending') {
+                sessionStorage.setItem('thread_id', data.thread_id);
+                pollRunStatus(data.thread_id, data.run_id, data.conversa_id);
+            }
+        })
+        .catch(error => {
+            console.error('Erro ao enviar mensagem:', error);
+            typingIndicator.remove();
+            alert('Erro ao enviar mensagem. Tente novamente.');
         });
-        {% endif %}
-    </script>
+    }
+
+    // Verificação de status
+    function pollRunStatus(threadId, runId, conversaId) {
+        const typingIndicator = document.querySelector('.typing-indicator');
+
+        const checkStatus = () => {
+            fetch(`/check_run?thread_id=${threadId}&run_id=${runId}&conversa_id=${conversaId}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'completed') {
+                        // Remove o indicador de digitação
+                        if (typingIndicator) {
+                            typingIndicator.remove();
+                        }
+
+                        // Adiciona a resposta
+                        chatWindow.appendChild(createMessage(data.response, 'assistant', data.mensagem_id));
+                        chatWindow.scrollTop = chatWindow.scrollHeight;
+                    } else if (data.status === 'failed') {
+                        // Remove o indicador de digitação em caso de falha
+                        if (typingIndicator) {
+                            typingIndicator.remove();
+                        }
+                    } else {
+                        // Continua o polling
+                        setTimeout(checkStatus, 1000);
+                    }
+                })
+                .catch(error => {
+                    console.error('Erro no polling:', error);
+                    setTimeout(checkStatus, 1000);
+                });
+        };
+
+        checkStatus();
+    }
+
+    // Event listeners
+    sendButton.addEventListener('click', sendMessage);
+    userInput.addEventListener('keypress', e => e.key === 'Enter' && sendMessage());
+
+
+    // Adicionar event listeners quando a página carregar
+    document.addEventListener('DOMContentLoaded', () => {
+        const downloadButton = document.getElementById('downloadButton');
+        if (downloadButton) {
+            downloadButton.addEventListener('click', downloadConversation);
+        }
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const assistantId = urlParams.get('assistant_id');
+        if (assistantId) {
+            sessionStorage.setItem('selected_assistant_id', assistantId);
+        }
+
+        // Mostrar botão de download se já houver uma conversa ativa
+        const conversaId = sessionStorage.getItem('conversa_id');
+        if (conversaId) {
+            document.querySelector('.download-container').style.display = 'block';
+        }
+
+        showPreChatForm();
+        hljs.highlightAll();
+    });
+
+    {% endif %}
+</script>
 </body>
 </html>

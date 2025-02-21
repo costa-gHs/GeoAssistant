@@ -38,8 +38,14 @@ def obter_metricas_tokens_usuarios():
     usuario_id = request.args.get('usuario_id', type=int)
 
     try:
-        query = supabase.table("token_metrics") \
-            .select("*, usuarios(nome)") \
+        # Query base para métricas de tokens
+        query = supabase.from_('token_metrics') \
+            .select("""
+                *,
+                usuarios (
+                    nome
+                )
+            """) \
             .gte('timestamp', (datetime.now() - timedelta(days=dias)).isoformat())
 
         if usuario_id:
@@ -47,11 +53,17 @@ def obter_metricas_tokens_usuarios():
 
         response = query.execute()
 
+        # Organizar dados por usuário
         usuarios_metricas = defaultdict(lambda: {
             'nome': '',
             'total_input_tokens': 0,
             'total_output_tokens': 0,
-            'metricas_diarias': defaultdict(lambda: {'input': 0, 'output': 0})
+            'total_tokens': 0,
+            'metricas_diarias': defaultdict(lambda: {
+                'input': 0,
+                'output': 0,
+                'total': 0
+            })
         })
 
         for metric in response.data:
@@ -59,10 +71,30 @@ def obter_metricas_tokens_usuarios():
             usuarios_metricas[usuario_id]['nome'] = metric['usuarios']['nome']
             usuarios_metricas[usuario_id]['total_input_tokens'] += metric['input_tokens']
             usuarios_metricas[usuario_id]['total_output_tokens'] += metric['output_tokens']
+            usuarios_metricas[usuario_id]['total_tokens'] += metric['total_tokens']
 
+            # Agregar por dia
             dia = datetime.fromisoformat(metric['timestamp']).strftime('%Y-%m-%d')
             usuarios_metricas[usuario_id]['metricas_diarias'][dia]['input'] += metric['input_tokens']
             usuarios_metricas[usuario_id]['metricas_diarias'][dia]['output'] += metric['output_tokens']
+            usuarios_metricas[usuario_id]['metricas_diarias'][dia]['total'] += metric['total_tokens']
+
+        # Buscar limites dos usuários
+        limites_response = supabase.table('user_limits').select('*').execute()
+        limites = {
+            limite['usuario_id']: limite['limite_tokens_mensal']
+            for limite in limites_response.data
+        }
+
+        # Adicionar informação de limites e percentual de uso
+        for usuario_id, metricas in usuarios_metricas.items():
+            limite = limites.get(usuario_id, 0)
+            if limite > 0:
+                metricas['limite_mensal'] = limite
+                metricas['percentual_uso'] = (metricas['total_tokens'] / limite) * 100
+            else:
+                metricas['limite_mensal'] = 0
+                metricas['percentual_uso'] = 0
 
         return jsonify({
             'usuarios': dict(usuarios_metricas),
@@ -70,6 +102,7 @@ def obter_metricas_tokens_usuarios():
         })
 
     except Exception as e:
+        print(f"Erro ao obter métricas: {e}")
         return jsonify({'error': str(e)}), 500
 
 # Gerenciamento de usuários

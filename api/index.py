@@ -10,6 +10,8 @@ from datetime import datetime as dt
 from api.supabase_client import supabase, verificar_senha, get_api_key
 from datetime import datetime
 import tiktoken
+import re
+from difflib import SequenceMatcher
 from collections import defaultdict
 
 app = Flask(__name__, static_folder='../static', template_folder='../templates')
@@ -19,6 +21,124 @@ app.instance_path = '/tmp'
 
 # Registra o Blueprint de administração
 app.register_blueprint(admin_routes_bp, url_prefix='/admin')  # Rotas administrativas
+
+def format_large_number(value):
+    """Formata números grandes com separadores de milhar"""
+    try:
+        return "{:,.0f}".format(float(value)).replace(",", ".")
+    except (ValueError, TypeError):
+        return "0"
+
+# Registrar o filtro no app Flask
+app.jinja_env.filters['format_number'] = format_large_number
+
+def get_response_with_usage(client, thread_id):
+    try:
+        # Obter as mensagens da thread
+        response = client.beta.threads.messages.list(
+            thread_id=thread_id,
+            order="desc",
+            limit=1
+        )
+
+        if not response.data:
+            return None, None
+
+        message = response.data[0]
+
+        # Extrair o conteúdo da mensagem
+        content = "".join([
+            block.text.value
+            for block in message.content
+            if block.type == "text"
+        ])
+
+        # Obter usage da run
+        run = client.beta.threads.runs.list(
+            thread_id=thread_id,
+            limit=1
+        )
+
+        if run.data:
+            usage = run.data[0].usage
+            token_metrics = {
+                'prompt_tokens': usage.prompt_tokens,
+                'completion_tokens': usage.completion_tokens,
+                'total_tokens': usage.total_tokens
+            }
+        else:
+            token_metrics = None
+
+        return content, token_metrics
+
+    except Exception as e:
+        print(f"Erro ao obter resposta e métricas: {e}")
+        return None, None
+
+
+def save_message_metrics(supabase_client, usuario_id, conversa_id, mensagem_id, token_metrics, modelo="gpt-4o"):
+    try:
+        if not token_metrics:
+            return
+
+        metrics_data = {
+            "usuario_id": usuario_id,
+            "conversa_id": conversa_id,
+            "mensagem_id": mensagem_id,
+            "input_tokens": token_metrics['prompt_tokens'],
+            "output_tokens": token_metrics['completion_tokens'],
+            "total_tokens": token_metrics['total_tokens'],
+            "timestamp": datetime.now().isoformat(),
+            "modelo": modelo  # Adicionando o modelo
+        }
+
+        return supabase_client.table("token_metrics").insert(metrics_data).execute()
+
+    except Exception as e:
+        print(f"Erro ao salvar métricas: {e}")
+        return None
+
+
+def verify_user_limits(supabase_client, usuario_id, token_metrics):
+    try:
+        if not token_metrics:
+            return True, None
+
+        # Buscar uso atual do mês
+        usage_response = supabase_client.from_('vw_user_usage') \
+            .select('*') \
+            .eq('usuario_id', usuario_id) \
+            .single() \
+            .execute()
+
+        # Buscar limites do usuário
+        limits_response = supabase_client.table("user_limits") \
+            .select("*") \
+            .eq("usuario_id", usuario_id) \
+            .single() \
+            .execute()
+
+        if not limits_response.data:
+            return True, None  # Sem limites definidos
+
+        current_usage = usage_response.data['total_tokens'] if usage_response.data else 0
+        limit = limits_response.data['limite_tokens_mensal']
+
+        # Projetar uso após esta mensagem
+        projected_usage = current_usage + token_metrics['total_tokens']
+        usage_percent = (projected_usage / limit) * 100
+
+        if usage_percent >= 100:
+            return False, "Limite mensal de tokens atingido"
+
+        if usage_percent >= limits_response.data['alerta_uso_porcentagem']:
+            print(f"ALERTA: Usuário {usuario_id} atingirá {usage_percent:.1f}% do limite mensal")
+
+        return True, None
+
+    except Exception as e:
+        print(f"Erro ao verificar limites: {e}")
+        return True, None
 
 # Funções auxiliares
 def iniciar_conversa(usuario_id, assistant_id=None):
@@ -111,96 +231,183 @@ def create_thread(client):
         print(f"Erro ao criar um tópico: {e}")
         return None
 
-def send_message(client, thread_id, user_message):
+
+def print_debug_info(message, data, level="INFO"):
+    print(f"\n{'=' * 50}")
+    print(f"[{level}] {message}")
+    print(f"{'=' * 50}")
+    print(f"Data: {data}")
+    print(f"{'=' * 50}\n")
+
+
+def get_conversation_context(client, thread_id, max_messages=10):
+    print_debug_info("Iniciando get_conversation_context", f"Thread ID: {thread_id}")
     try:
-        client.beta.threads.messages.create(
-            thread_id=thread_id, role="user", content=user_message
+        messages = client.beta.threads.messages.list(
+            thread_id=thread_id,
+            order="desc",
+            limit=max_messages
         )
-        print(f"Mensagem enviada para thread {thread_id}")  # Debug
+
+        conversation_history = []
+        last_assistant_messages = []
+        message_count = {}
+
+        for msg in messages.data:
+            content = [block.text.value for block in msg.content if block.type == "text"]
+            content = content[0] if content else ""
+
+            if msg.role == "assistant":
+                # Normalizar a mensagem removendo espaços extras
+                normalized_message = re.sub(r'\s+', ' ', content.lower().strip())
+                last_assistant_messages.append(normalized_message)
+                message_count[normalized_message] = message_count.get(normalized_message, 0) + 1
+
+                print_debug_info("Mensagem do assistente", {
+                    "original": content,
+                    "normalized": normalized_message,
+                    "count": message_count[normalized_message]
+                })
+
+            conversation_history.append({
+                "role": msg.role,
+                "content": content
+            })
+
+        # Verificar repetições exatas
+        repetition_detected = any(count >= 2 for count in message_count.values())
+
+        # Verificar similaridade entre as últimas mensagens
+        similar_messages = False
+        if len(last_assistant_messages) >= 2:
+            for i in range(len(last_assistant_messages) - 1):
+                current_message = last_assistant_messages[i]
+                next_message = last_assistant_messages[i + 1]
+
+                similarity = SequenceMatcher(None, current_message, next_message).ratio()
+
+                print_debug_info("Análise de similaridade de mensagens", {
+                    "message1": current_message[:100] + "...",
+                    "message2": next_message[:100] + "...",
+                    "similarity": similarity
+                })
+
+                if similarity > 0.8:  # 80% similar
+                    similar_messages = True
+                    print_debug_info("Similaridade alta detectada!", {
+                        "similarity": similarity,
+                        "messages": [current_message, next_message]
+                    })
+                    break
+
+        result = {
+            "has_repetition": repetition_detected or similar_messages,
+            "context": conversation_history,
+            "message_count": message_count,
+            "similar_messages_found": similar_messages,
+            "last_messages": last_assistant_messages[:3]
+        }
+
+        print_debug_info("Resultado da análise", {
+            "repetition_detected": repetition_detected,
+            "similar_messages_found": similar_messages,
+            "message_counts": {k[:50] + "...": v for k, v in message_count.items()},
+            "last_messages": [msg[:50] + "..." for msg in last_assistant_messages[:3]]
+        })
+
+        return result
+
+    except Exception as e:
+        print_debug_info("Erro em get_conversation_context", str(e), "ERROR")
+        return {
+            "has_repetition": False,
+            "context": []
+        }
+
+def handle_repetitive_questions(client, thread_id, message):
+    context = get_conversation_context(client, thread_id)
+
+    if context["has_repetition"]:
+        instruction = """
+        ALERTA: DETECTADA REPETIÇÃO NO PADRÃO DE RESPOSTA!
+
+        Análise do histórico mostra que estamos em um loop de respostas similares.
+
+        INSTRUÇÕES OBRIGATÓRIAS:
+        1. PARE de usar o mesmo padrão de resposta
+        2. NÃO use a estrutura "Com a confirmação de..."
+        3. MUDE COMPLETAMENTE a abordagem do diagnóstico
+        4. Faça um resumo dos problemas identificados até agora
+        5. Sugira ações práticas de manutenção específicas
+        6. Se necessário, recomende inspeção especializada
+
+        CONTEXTO ATUAL:
+        {message}
+        """
+
+        print_debug_info("Instrução gerada para evitar repetição", instruction)
+        return instruction
+
+    return message
+
+def send_message(client, thread_id, message):
+    try:
+        if isinstance(message, dict):
+            client.beta.threads.messages.create(
+                thread_id=thread_id,
+                **message
+            )
+        else:
+            # Processar mensagem para evitar repetições
+            processed_message = handle_repetitive_questions(client, thread_id, message)
+            client.beta.threads.messages.create(
+                thread_id=thread_id,
+                role="user",
+                content=processed_message
+            )
         return True
     except Exception as e:
         print(f"Erro ao enviar mensagem: {e}")
         return False
 
+
 def run_thread(client, thread_id, assistant_id):
+    print_debug_info("Iniciando run_thread", {
+        "thread_id": thread_id,
+        "assistant_id": assistant_id
+    })
+
     try:
+        instructions = """
+        INSTRUÇÕES DE DIAGNÓSTICO:
+        1. Mantenha um histórico claro das perguntas já feitas
+        2. Evite repetir perguntas ou fazer perguntas muito similares
+        3. Se uma questão não for respondida após 2 tentativas, mude a abordagem
+        4. Explore diferentes aspectos do problema em cada pergunta
+        5. Priorize diagnósticos práticos e ações concretas
+        6. Se detectar um padrão circular, sugira ações específicas de manutenção
+        7. Mantenha o foco no problema principal relatado
+        8. Caso necessário, solicite informações adicionais específicas
+        9. Na nona pergunta, faça uma avaliação geral e sugira próximos passos
+        10. Evite fazer mais de 10 perguntas no total
+        """
+
         run = client.beta.threads.runs.create(
             thread_id=thread_id,
             assistant_id=assistant_id,
+            additional_instructions=instructions
         )
-        print(f"Thread {thread_id} executada com assistant_id {assistant_id}")  # Debug
+
+        print_debug_info("Thread executada com sucesso", {
+            "run_id": run.id,
+            "status": run.status
+        })
+
         return run
     except Exception as e:
-        print(f"Erro ao executar o tópico: {e}")
+        print_debug_info("Erro ao executar thread", str(e), "ERROR")
         return None
 
-def contar_tokens(texto, modelo="gpt-4o-mini"):
-    """
-    Calcula o número de tokens para um texto usando o modelo especificado.
-    """
-    try:
-        codificacao = tiktoken.encoding_for_model(modelo)
-        return len(codificacao.encode(texto))
-    except Exception as e:
-        print(f"Erro ao contar tokens: {e}")
-        return 0
-
-def get_response(client, thread_id, modelo="gpt-3.5-turbo"):
-    try:
-        # Obter as mensagens da thread
-        response = client.beta.threads.messages.list(thread_id=thread_id, order="asc")
-
-        # Verificar se a resposta é um dicionário e contém "data"
-        if isinstance(response, dict) and "data" in response:
-            messages = response["data"]
-        elif hasattr(response, "data"):
-            messages = response.data
-        else:
-            print("Erro: Resposta da API não contém mensagens válidas.")
-            return None
-
-        # Verificar mensagens
-        if not messages:
-            print("Nenhuma mensagem encontrada na thread.")
-            return None
-
-        # Encontrar a última mensagem do assistente
-        last_message = next(
-            (msg for msg in reversed(messages) if getattr(msg, "role", "") == "assistant"),
-            None
-        )
-
-        if not last_message:
-            print("Nenhuma resposta do assistente encontrada ainda.")
-            return None
-
-        # Processar o conteúdo da mensagem
-        content_text = "".join(
-            [block.text.value for block in getattr(last_message, "content", []) if block.type == "text"]
-        )
-
-        # Calcular tokens de entrada e saída
-        input_tokens = sum(
-            contar_tokens(
-                "".join(
-                    [block.text.value for block in getattr(msg, "content", []) if block.type == "text"]
-                ),
-                modelo,
-            )
-            for msg in messages
-            if getattr(msg, "role", "") == "user"
-        )
-        output_tokens = contar_tokens(content_text, modelo)
-
-        # Exibir os tokens calculados
-        print(f"Tokens de entrada (input): {input_tokens}")
-        print(f"Tokens de saída (output): {output_tokens}")
-        print(f"Resposta do assistente: {content_text}")
-
-        return content_text  # Retornar o texto da resposta
-    except Exception as e:
-        print(f"Erro ao obter resposta: {e}")
-        return None
 
 
 def verificar_e_atualizar_uso(usuario_id, input_tokens, output_tokens):
@@ -374,55 +581,74 @@ def home():
         return redirect(url_for('login'))
 
     usuario_nome = session.get('usuario_nome')
-
-    # Verifica se o usuário é CaioD2G e redireciona ao chat
-    if usuario_nome == 'CaioD2G':
-        return redirect(url_for('index', assistant_id='asst_9pmT1xXEYD9aCYvyDHWlFGJK'))
+    usuario_id = session.get('usuario_id')
 
     try:
         # Buscar modelos de IA
         response = supabase.table("ai_models").select("*").execute()
         ai_models = response.data
 
+        # Buscar custos de tokens do usuário
+        token_costs = supabase.from_('vw_token_costs') \
+            .select('*') \
+            .eq('usuario_id', usuario_id) \
+            .execute()
+
+        # Organizar custos por modelo
+        costs_by_model = {}
+        total_cost = 0.0  # Inicializado como float
+        if token_costs.data:
+            for cost in token_costs.data:
+                model_name = cost.get('modelo', 'Desconhecido')
+                # Garantir que todos os valores numéricos são float ou 0
+                costs_by_model[model_name] = {
+                    'input_tokens': float(cost.get('total_input_tokens') or 0),
+                    'output_tokens': float(cost.get('total_output_tokens') or 0),
+                    'total_tokens': float(cost.get('total_tokens') or 0),
+                    'cost': float(cost.get('estimated_cost') or 0),
+                    'price_per_million': float(cost.get('text_tokens_price') or 0)
+                }
+                total_cost += float(cost.get('estimated_cost') or 0)
+
         # Estatísticas para admins
-        stats = {}
+        stats = {
+            'total_cost': total_cost  # Movido para dentro do stats
+        }
+
         if session.get('is_admin'):
             # Total de usuários
             users_count = supabase.table("usuarios").select("count").execute()
             stats['total_usuarios'] = users_count.data[0]['count'] if users_count.data else 0
 
-            # Conversas de hoje - Aqui está a correção
+            # Conversas de hoje
             today = datetime.now().strftime('%Y-%m-%d')
-            conversas_hoje = supabase.table("conversas")\
-                .select("count")\
-                .gte("data_inicio", today)\
+            conversas_hoje = supabase.table("conversas") \
+                .select("count") \
+                .gte("data_inicio", today) \
                 .execute()
             stats['conversas_hoje'] = conversas_hoje.data[0]['count'] if conversas_hoje.data else 0
 
             # Total de tokens
-            tokens = supabase.table("token_metrics")\
-                .select("input_tokens,output_tokens")\
-                .execute()
-            total_tokens = sum([
-                (t.get('input_tokens', 0) + t.get('output_tokens', 0))
-                for t in tokens.data
-            ]) if tokens.data else 0
-            stats['total_tokens'] = total_tokens
+            stats['total_tokens'] = sum(
+                model['total_tokens'] for model in costs_by_model.values()
+            )
 
         return render_template(
             'home.html',
             ai_models=ai_models,
-            usuario_nome=session.get('usuario_nome'),
+            usuario_nome=usuario_nome,
             is_admin=session.get('is_admin', False),
+            token_costs=costs_by_model,
             **stats
         )
-
     except Exception as e:
+        print(f"Erro na rota home: {e}")
         return render_template(
             'home.html',
             ai_models=[],
             error=str(e)
         )
+
 @app.route('/debug-tables')
 def debug_tables():
     try:
@@ -509,80 +735,71 @@ def chat():
     if 'usuario_id' not in session:
         return jsonify({'error': 'Usuário não autenticado'}), 403
 
-    usuario_id = session['usuario_id']
-    print(f"Processando chat para o usuário ID {usuario_id}...")
+    print_debug_info("Nova requisição de chat", {
+        "usuario_id": session['usuario_id'],
+        "request_data": request.get_json()
+    })
 
+    usuario_id = session['usuario_id']
+
+    # Verificar limites de uso
     pode_continuar, mensagem = verificar_limites_usuario(usuario_id)
     if not pode_continuar:
-        return jsonify({'error': mensagem}), 429  # Too Many Requests
+        print_debug_info("Limite de uso excedido", mensagem, "ERROR")
+        return jsonify({'error': mensagem}), 429
 
-    # Busca a chave API associada ao usuário
+    # Buscar a chave API
     api_key = get_api_key(usuario_id)
     if not api_key:
-        print(f"Erro: Chave API não configurada para o usuário ID {usuario_id}.")
+        print_debug_info("Chave API não encontrada", f"Usuário ID: {usuario_id}", "ERROR")
         return jsonify({'error': 'Chave API não configurada para este usuário.'}), 400
 
-    print(f"Chave API utilizada para o usuário ID {usuario_id}: {api_key}")
     client = OpenAI(api_key=api_key)
-
-
-
-    # Obtém dados do request
     data = request.get_json()
+
     assistant_id = data.get('assistant_id')
     user_message = data.get('message')
-    conversa_id = data.get('conversa_id')  # Pode ser None
+    conversa_id = data.get('conversa_id')
+    technical_context = data.get('technical_context')
 
-    if 'file' in request.files:
-        file = request.files['file']
-        if file:
-            message_file = client.files.create(
-                file=file.stream,
-                purpose="assistants"
-            )
-
-            # Adicionar arquivo ao vetor store da thread
-            message_data = {
-                "role": "user",
-                "content": user_message,
-                "attachments": [
-                    {"file_id": message_file.id, "tools": [{"type": "file_search"}]}
-                ]
-            }
-        else:
-            message_data = {
-                "role": "user",
-                "content": user_message
-            }
-
-    # Adiciona logs para depuração
-    print(f"assistant_id recebido: {assistant_id}")
-    print(f"user_message recebido: {user_message}")
-
-    # Validação de entrada
     if not assistant_id or not user_message:
+        print_debug_info("Parâmetros inválidos", data, "ERROR")
         return jsonify({'error': 'Parâmetros inválidos'}), 400
 
     try:
-        # Criação ou recuperação de uma conversa
+        nova_conversa = False
         if not conversa_id:
-            # Cria uma nova conversa e thread
+            print_debug_info("Iniciando nova conversa", {
+                "assistant_id": assistant_id,
+                "technical_context": technical_context
+            })
+
             thread_id = create_thread(client)
             if not thread_id:
                 return jsonify({'error': 'Erro ao criar uma nova thread.'}), 500
 
-            # Cria uma nova conversa no Supabase
+            if technical_context:
+                client.beta.threads.messages.create(
+                    thread_id=thread_id,
+                    role="user",
+                    content=f"CONTEXTO TÉCNICO:\n{technical_context}"
+                )
+
             nova_conversa_response = supabase.table("conversas").insert({
                 "id_usuario": usuario_id,
                 "data_inicio": datetime.now().isoformat(),
                 "assistant_id": assistant_id,
-                "thread_id": thread_id,  # Salva thread_id imediatamente
+                "thread_id": thread_id,
                 "id_modelo": None
             }).execute()
 
             conversa_id = nova_conversa_response.data[0]["id"]
+            nova_conversa = True
         else:
-            # Recupera a conversa existente
+            print_debug_info("Continuando conversa existente", {
+                "conversa_id": conversa_id
+            })
+
             conversa_response = supabase.table("conversas").select("*").eq("id", conversa_id).execute()
             conversa = conversa_response.data[0] if conversa_response.data else None
 
@@ -591,98 +808,41 @@ def chat():
 
             thread_id = conversa.get("thread_id")
             if not thread_id:
-                # Só cria nova thread se realmente não existir
                 thread_id = create_thread(client)
                 if not thread_id:
                     return jsonify({'error': 'Erro ao criar uma nova thread.'}), 500
                 supabase.table("conversas").update({"thread_id": thread_id}).eq("id", conversa_id).execute()
 
-        if nova_conversa:
-            # Buscar o modelo correspondente ao assistant_id
-            try:
-                modelo_query = supabase.table("ai_models") \
-                    .select("id") \
-                    .eq("assistant_id", assistant_id) \
-                    .execute()
+        # Processar mensagem com controle de repetição
+        final_message = handle_repetitive_questions(client, thread_id, user_message)
 
-                if modelo_query.data:
-                    id_modelo = modelo_query.data[0]['id']
-                    # Atualizar a conversa com o id_modelo
-                    supabase.table("conversas") \
-                        .update({"id_modelo": id_modelo}) \
-                        .eq("id", conversa_id) \
-                        .execute()
-            except Exception as e:
-                print(f"Erro ao atualizar modelo da conversa: {e}")
+        if technical_context and not nova_conversa:
+            final_message = f"CONTEXTO TÉCNICO:\n{technical_context}\n\nPERGUNTA DO USUÁRIO:\n{final_message}"
 
-        # Envia mensagem para a thread
-        if not send_message(client, thread_id, user_message):
+        print_debug_info("Mensagem final processada", {
+            "original": user_message,
+            "processed": final_message
+        })
+
+        success = send_message(client, thread_id, final_message)
+        if not success:
             return jsonify({'error': 'Erro ao enviar a mensagem.'}), 500
 
-        # Executa a thread
         run_response = run_thread(client, thread_id, assistant_id)
         if not run_response:
             return jsonify({'error': 'Erro ao executar o tópico.'}), 500
 
-        # Polling para obter a resposta
-        # Polling para obter a resposta
-        max_wait_time = 60
-        poll_interval = 5
-        total_waited = 0
-        resposta = None
-
-        while total_waited < max_wait_time:
-            time.sleep(poll_interval)
-            total_waited += poll_interval
-            resposta_suja = get_response(client, thread_id)
-            if resposta_suja:
-                resposta = resposta_suja  # A resposta já está processada corretamente
-                break
-
-        if resposta:
-            return jsonify({
-                'status': 'pending',
-                'run_id': run_response.id,
-                'thread_id': thread_id,
-                'conversa_id': conversa_id,
-                'message': user_message
-            })
-
-            if not mensagem_response.data:
-                return jsonify({'error': 'Erro ao salvar mensagem'}), 500
-
-            mensagem_id = mensagem_response.data[0]['id']
-
-            # Depois salvamos as métricas usando o ID obtido
-            input_tokens = contar_tokens(user_message)
-            output_tokens = contar_tokens(resposta)
-
-            # Salvar métricas
-            supabase.table("token_metrics").insert({
-                "usuario_id": usuario_id,
-                "conversa_id": conversa_id,
-                "mensagem_id": mensagem_id,
-                "input_tokens": input_tokens,
-                "output_tokens": output_tokens,
-                "modelo": "4o-mini",
-                "timestamp": datetime.now().isoformat()
-            }).execute()
-
-            return jsonify({
-                'status': 'pending',
-                'run_id': run_response.id,
-                'thread_id': thread_id,
-                'conversa_id': conversa_id,
-                'message': user_message
-            })
-        else:
-            return jsonify({'error': 'Não foi possível obter uma resposta do assistente.'}), 500
-
+        return jsonify({
+            'status': 'pending',
+            'run_id': run_response.id,
+            'thread_id': thread_id,
+            'conversa_id': conversa_id,
+            'message': user_message
+        })
 
     except Exception as e:
-        print(f"Erro ao processar o chat: {e}")
+        print_debug_info("Erro ao processar chat", str(e), "ERROR")
         return jsonify({'error': f'Erro ao processar o chat: {str(e)}'}), 500
-
 
 # Adicionar nova rota para check_run
 @app.route('/check_run')
@@ -707,26 +867,54 @@ def check_run():
             run_id=run_id
         )
 
-        print(f"Status do run {run_id}: {run.status}")
-
         if run.status == 'completed':
-            resposta = get_response(client, thread_id)
+            # Obtém resposta e métricas de uso
+            resposta, token_metrics = get_response_with_usage(client, thread_id)
+
             if resposta:
-                # Salva mensagem e métricas
-                mensagem_id = salvar_mensagem_com_metricas(
-                    usuario_id=session['usuario_id'],
-                    id_conversa=conversa_id,
-                    texto_usuario=request.args.get('message', ''),
-                    texto_gpt=resposta,
-                    input_tokens=contar_tokens(request.args.get('message', '')),
-                    output_tokens=contar_tokens(resposta),
-                    modelo="4o-mini"
+                # Verifica limites antes de salvar
+                pode_continuar, mensagem = verify_user_limits(
+                    supabase,
+                    session['usuario_id'],
+                    token_metrics
                 )
-                return jsonify({
-                    'status': 'completed',
-                    'response': resposta,
-                    'mensagem_id': mensagem_id
-                })
+
+                if not pode_continuar:
+                    return jsonify({
+                        'status': 'error',
+                        'error': mensagem
+                    }), 429
+
+                # Salva a mensagem
+                mensagem_response = supabase.table("mensagens").insert({
+                    "id_conversa": conversa_id,
+                    "texto_usuario": request.args.get('message', ''),
+                    "texto_gpt": resposta,
+                    "data_hora_envio": datetime.now().isoformat()
+                }).execute()
+
+                if mensagem_response.data:
+                    mensagem_id = mensagem_response.data[0]['id']
+
+                    # Usar sempre o modelo 4o-mini para métricas
+                    modelo = "4o-mini"  # Definindo modelo fixo
+
+                    # Salva as métricas
+                    save_message_metrics(
+                        supabase,
+                        session['usuario_id'],
+                        conversa_id,
+                        mensagem_id,
+                        token_metrics,
+                        modelo=modelo
+                    )
+
+                    return jsonify({
+                        'status': 'completed',
+                        'response': resposta,
+                        'mensagem_id': mensagem_id,
+                        'token_metrics': token_metrics
+                    })
 
         return jsonify({'status': run.status})
 
@@ -778,24 +966,39 @@ def nova_conversa():
     try:
         data = request.get_json()
         assistant_id = data.get('assistant_id')
+        contexto_tecnico = data.get('contexto_tecnico', '')
 
-        nova_conversa = iniciar_conversa(
-            session['usuario_id'],
-            assistant_id=assistant_id
-        )
+        usuario_id = session['usuario_id']
+        client = OpenAI(api_key=get_api_key(usuario_id))
 
-        if nova_conversa:
-            nova_conversa["data_inicio"] = datetime.fromisoformat(nova_conversa["data_inicio"])
-            session['conversa_id'] = nova_conversa["id"]
-            return jsonify({
-                'success': True,
-                'conversa_id': nova_conversa["id"],
-                'data_inicio': nova_conversa["data_inicio"].strftime('%d/%m/%Y %H:%M')
-            })
-        else:
-            return jsonify({'success': False, 'message': 'Erro ao criar conversa.'}), 500
+        # Criar thread e adicionar contexto
+        thread_id = create_thread(client)
+        if contexto_tecnico:
+            client.beta.threads.messages.create(
+                thread_id=thread_id,
+                role="user",
+                content=f"CONTEXTO TÉCNICO:\n{contexto_tecnico}"
+            )
+
+        # Salvar conversa no banco
+        conversa_data = {
+            "id_usuario": usuario_id,
+            "assistant_id": assistant_id,
+            "thread_id": thread_id,
+            "data_inicio": datetime.now().isoformat()
+        }
+
+        response = supabase.table("conversas").insert(conversa_data).execute()
+        return jsonify({
+            'success': True,
+            'conversa_id': response.data[0]['id'],
+            'thread_id': thread_id
+        })
+
     except Exception as e:
-        return jsonify({'success': False, 'message': f'Erro: {str(e)}'}), 500
+        print(f"Erro ao criar conversa: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+
 
 @app.route('/feedback', methods=['POST'])
 def save_feedback():
