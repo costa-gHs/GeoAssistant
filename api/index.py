@@ -12,10 +12,15 @@ from datetime import datetime
 import tiktoken
 import re
 from difflib import SequenceMatcher
+import logging
+import uuid
 from collections import defaultdict
 
 app = Flask(__name__, static_folder='../static', template_folder='../templates')
 app.secret_key = secrets.token_hex(16)
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app.instance_path = '/tmp'
 
@@ -180,28 +185,87 @@ def salvar_mensagem(id_conversa, texto_usuario, texto_gpt):
         print(f"Erro ao salvar mensagem: {e}")
 
 
+def carregar_historico(usuario_id, limite=10, include_messages=False):
+    """
+    Carrega o histórico de conversas de forma otimizada.
 
-def carregar_historico(usuario_id):
+    Args:
+        usuario_id: ID do usuário
+        limite: Número máximo de conversas a retornar (padrão: 10)
+        include_messages: Se True, inclui as mensagens das conversas
+
+    Returns:
+        Uma lista de conversas, ordenadas por data de início (mais recentes primeiro)
+    """
     try:
-        conversas = supabase.table("conversas").select("*").eq("id_usuario", usuario_id).execute().data
-        historico = []
-        for conversa in conversas:
-            # Converte string ISO8601 para datetime
-            data_inicio = datetime.fromisoformat(conversa["data_inicio"])
-            mensagens = supabase.table("mensagens").select("*").eq("id_conversa", conversa["id"]).execute().data
-            historico.append({
-                "conversa_id": conversa["id"],
-                "data_inicio": data_inicio,  # Agora é um objeto datetime
-                "mensagens": [
-                    {
-                        "usuario": mensagem["texto_usuario"],
-                        "gpt": mensagem["texto_gpt"],
-                        "data": datetime.fromisoformat(mensagem["data_hora_envio"])
-                    }
-                    for mensagem in mensagens
-                ]
-            })
-        return historico
+        # Buscar apenas as conversas mais recentes, com limite
+        conversas = supabase.table("conversas") \
+            .select("*") \
+            .eq("id_usuario", usuario_id) \
+            .order("data_inicio", desc=True) \
+            .limit(limite) \
+            .execute()
+
+        conversas_data = conversas.data if conversas.data else []
+
+        if not include_messages:
+            # Se não precisar das mensagens, retorna apenas os metadados das conversas
+            return [
+                {
+                    "conversa_id": conversa["id"],
+                    "data_inicio": datetime.fromisoformat(conversa["data_inicio"]),
+                    "thread_id": conversa.get("thread_id"),
+                    "assistant_id": conversa.get("assistant_id"),
+                    "mensagens": []  # Lista vazia, já que não estamos buscando mensagens
+                }
+                for conversa in conversas_data
+            ]
+
+        # Se precisar das mensagens, otimiza fazendo uma única requisição com filtro IN
+        if conversas_data:
+            conversa_ids = [conversa["id"] for conversa in conversas_data]
+
+            # Buscar todas as mensagens de todas as conversas em uma única requisição
+            mensagens = supabase.table("mensagens") \
+                .select("*") \
+                .in_("id_conversa", conversa_ids) \
+                .execute()
+
+            mensagens_data = mensagens.data if mensagens.data else []
+
+            # Organizar mensagens por conversa_id para facilitar o processamento
+            mensagens_por_conversa = {}
+            for mensagem in mensagens_data:
+                conversa_id = mensagem["id_conversa"]
+                if conversa_id not in mensagens_por_conversa:
+                    mensagens_por_conversa[conversa_id] = []
+                mensagens_por_conversa[conversa_id].append(mensagem)
+
+            # Construir o resultado final
+            historico = []
+            for conversa in conversas_data:
+                conversa_id = conversa["id"]
+                mensagens_conversa = mensagens_por_conversa.get(conversa_id, [])
+
+                historico.append({
+                    "conversa_id": conversa_id,
+                    "data_inicio": datetime.fromisoformat(conversa["data_inicio"]),
+                    "thread_id": conversa.get("thread_id"),
+                    "assistant_id": conversa.get("assistant_id"),
+                    "mensagens": [
+                        {
+                            "usuario": mensagem["texto_usuario"],
+                            "gpt": mensagem["texto_gpt"],
+                            "data": datetime.fromisoformat(mensagem["data_hora_envio"])
+                        }
+                        for mensagem in mensagens_conversa
+                    ]
+                })
+
+            return historico
+
+        return []
+
     except Exception as e:
         print(f"Erro ao carregar histórico: {e}")
         return []
@@ -559,21 +623,33 @@ def index():
     # Busca assistentes do OpenAI
     assistants = get_assistants()
 
-    # Carrega o histórico de conversas
-    historico = carregar_historico(usuario_id)
+    # Carrega apenas os metadados das conversas recentes, sem mensagens
+    historico = carregar_historico(usuario_id, limite=10, include_messages=False)
 
     # Pega o assistant_id da querystring, caso exista
     assistant_id = request.args.get('assistant_id')
 
-    return render_template(
-        'index.html',
-        usuario_nome=usuario_nome,
-        is_admin=is_admin,
-        assistants=assistants,
-        historico=historico,
-        selected_assistant_id=assistant_id
-    )
-
+    # Escolhe o template com base no ID do assistente
+    if assistant_id == 'asst_NjQVLJS3Ax11WbThZyNsS0gl':
+        # Este é o assistente específico de componentes
+        return render_template(
+            'troubleshooting_focado.html',
+            usuario_nome=usuario_nome,
+            is_admin=is_admin,
+            assistants=assistants,
+            historico=historico,
+            selected_assistant_id=assistant_id
+        )
+    else:
+        # Usa o template padrão para todos os outros assistentes
+        return render_template(
+            'index.html',
+            usuario_nome=usuario_nome,
+            is_admin=is_admin,
+            assistants=assistants,
+            historico=historico,
+            selected_assistant_id=assistant_id
+        )
 
 @app.route('/home')
 def home():
@@ -735,23 +811,21 @@ def chat():
     if 'usuario_id' not in session:
         return jsonify({'error': 'Usuário não autenticado'}), 403
 
-    print_debug_info("Nova requisição de chat", {
-        "usuario_id": session['usuario_id'],
-        "request_data": request.get_json()
-    })
+    request_id = str(uuid.uuid4())[:8]  # ID único para rastrear essa requisição em logs
+    logger.info(f"[{request_id}] Nova requisição de chat recebida")
 
     usuario_id = session['usuario_id']
 
     # Verificar limites de uso
     pode_continuar, mensagem = verificar_limites_usuario(usuario_id)
     if not pode_continuar:
-        print_debug_info("Limite de uso excedido", mensagem, "ERROR")
+        logger.warning(f"[{request_id}] Limite de uso excedido: {mensagem}")
         return jsonify({'error': mensagem}), 429
 
     # Buscar a chave API
     api_key = get_api_key(usuario_id)
     if not api_key:
-        print_debug_info("Chave API não encontrada", f"Usuário ID: {usuario_id}", "ERROR")
+        logger.error(f"[{request_id}] Chave API não encontrada para usuário ID: {usuario_id}")
         return jsonify({'error': 'Chave API não configurada para este usuário.'}), 400
 
     client = OpenAI(api_key=api_key)
@@ -761,21 +835,20 @@ def chat():
     user_message = data.get('message')
     conversa_id = data.get('conversa_id')
     technical_context = data.get('technical_context')
+    is_retry = data.get('is_retry', False)  # Flag para identificar tentativas de recuperação
 
     if not assistant_id or not user_message:
-        print_debug_info("Parâmetros inválidos", data, "ERROR")
+        logger.error(f"[{request_id}] Parâmetros inválidos: {data}")
         return jsonify({'error': 'Parâmetros inválidos'}), 400
 
     try:
         nova_conversa = False
         if not conversa_id:
-            print_debug_info("Iniciando nova conversa", {
-                "assistant_id": assistant_id,
-                "technical_context": technical_context
-            })
+            logger.info(f"[{request_id}] Iniciando nova conversa com assistant_id: {assistant_id}")
 
             thread_id = create_thread(client)
             if not thread_id:
+                logger.error(f"[{request_id}] Erro ao criar thread")
                 return jsonify({'error': 'Erro ao criar uma nova thread.'}), 500
 
             if technical_context:
@@ -795,53 +868,74 @@ def chat():
 
             conversa_id = nova_conversa_response.data[0]["id"]
             nova_conversa = True
+            logger.info(f"[{request_id}] Nova conversa criada com ID: {conversa_id}")
         else:
-            print_debug_info("Continuando conversa existente", {
-                "conversa_id": conversa_id
-            })
+            logger.info(f"[{request_id}] Continuando conversa existente ID: {conversa_id}")
 
             conversa_response = supabase.table("conversas").select("*").eq("id", conversa_id).execute()
             conversa = conversa_response.data[0] if conversa_response.data else None
 
             if not conversa:
+                logger.error(f"[{request_id}] Conversa ID {conversa_id} não encontrada")
                 return jsonify({'error': 'Conversa não encontrada.'}), 404
 
             thread_id = conversa.get("thread_id")
             if not thread_id:
                 thread_id = create_thread(client)
                 if not thread_id:
+                    logger.error(f"[{request_id}] Erro ao criar thread para conversa existente")
                     return jsonify({'error': 'Erro ao criar uma nova thread.'}), 500
                 supabase.table("conversas").update({"thread_id": thread_id}).eq("id", conversa_id).execute()
+                logger.info(f"[{request_id}] Nova thread {thread_id} criada para conversa existente {conversa_id}")
 
         # Processar mensagem com controle de repetição
-        final_message = handle_repetitive_questions(client, thread_id, user_message)
+        final_message = user_message
 
-        if technical_context and not nova_conversa:
+        # Se for uma tentativa de recuperação, adicione instruções especiais
+        if is_retry:
+            logger.info(f"[{request_id}] Processando tentativa de recuperação para thread {thread_id}")
+            recovery_instructions = """
+            INSTRUÇÃO ESPECIAL DE RECUPERAÇÃO:
+            Houve um timeout na resposta anterior. 
+            1. Continue de onde parou ou forneça uma resposta mais concisa
+            2. Evite respostas longas ou complexas
+            3. Foque nos pontos mais importantes para responder ao usuário
+            4. Se estava no meio de um diagnóstico, forneça uma conclusão parcial
+
+            Mensagem original do usuário:
+            """
+            final_message = f"{recovery_instructions}\n{user_message}"
+        else:
+            final_message = handle_repetitive_questions(client, thread_id, user_message)
+
+        # Adicionar contexto técnico se necessário e não for uma nova conversa
+        if technical_context and not nova_conversa and not is_retry:
             final_message = f"CONTEXTO TÉCNICO:\n{technical_context}\n\nPERGUNTA DO USUÁRIO:\n{final_message}"
 
-        print_debug_info("Mensagem final processada", {
-            "original": user_message,
-            "processed": final_message
-        })
-
+        logger.info(f"[{request_id}] Enviando mensagem para thread {thread_id}")
         success = send_message(client, thread_id, final_message)
         if not success:
+            logger.error(f"[{request_id}] Falha ao enviar mensagem para thread {thread_id}")
             return jsonify({'error': 'Erro ao enviar a mensagem.'}), 500
 
+        # Adicionar timeout maior para runs em tentativas de recuperação
         run_response = run_thread(client, thread_id, assistant_id)
         if not run_response:
+            logger.error(f"[{request_id}] Falha ao executar thread {thread_id}")
             return jsonify({'error': 'Erro ao executar o tópico.'}), 500
 
+        logger.info(f"[{request_id}] Thread executada com sucesso: {run_response.id}")
         return jsonify({
             'status': 'pending',
             'run_id': run_response.id,
             'thread_id': thread_id,
             'conversa_id': conversa_id,
-            'message': user_message
+            'message': user_message,
+            'is_retry': is_retry
         })
 
     except Exception as e:
-        print_debug_info("Erro ao processar chat", str(e), "ERROR")
+        logger.error(f"[{request_id}] Erro ao processar chat: {str(e)}")
         return jsonify({'error': f'Erro ao processar o chat: {str(e)}'}), 500
 
 # Adicionar nova rota para check_run
@@ -853,6 +947,7 @@ def check_run():
     thread_id = request.args.get('thread_id')
     run_id = request.args.get('run_id')
     conversa_id = request.args.get('conversa_id')
+    message = request.args.get('message', '')  # Recuperar a mensagem original
 
     try:
         api_key = get_api_key(session['usuario_id'])
@@ -861,7 +956,7 @@ def check_run():
 
         client = OpenAI(api_key=api_key)
 
-        # Verifica o status do run
+        # Verifica o status do run com timeout ajustado
         run = client.beta.threads.runs.retrieve(
             thread_id=thread_id,
             run_id=run_id
@@ -888,7 +983,7 @@ def check_run():
                 # Salva a mensagem
                 mensagem_response = supabase.table("mensagens").insert({
                     "id_conversa": conversa_id,
-                    "texto_usuario": request.args.get('message', ''),
+                    "texto_usuario": message or request.args.get('message', ''),
                     "texto_gpt": resposta,
                     "data_hora_envio": datetime.now().isoformat()
                 }).execute()
@@ -916,10 +1011,18 @@ def check_run():
                         'token_metrics': token_metrics
                     })
 
+        # Se o status for "failed" ou "expired", indicar claramente no retorno
+        if run.status in ['failed', 'expired', 'cancelled']:
+            logger.warning(f"Run {run_id} terminou com status: {run.status}")
+            return jsonify({
+                'status': 'failed',
+                'error': f'A execução foi interrompida com status: {run.status}'
+            })
+
         return jsonify({'status': run.status})
 
     except Exception as e:
-        print(f"Erro ao verificar status: {e}")
+        logger.error(f"Erro ao verificar status do run {run_id}: {e}")
         return jsonify({'status': 'failed', 'error': str(e)})
 
 @app.route('/conversa/<int:conversa_id>')

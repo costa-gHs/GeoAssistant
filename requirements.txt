@@ -9,3 +9,5 @@ supabase
 asyncpg
 tiktoken
 werkzeug
+logging
+uuid

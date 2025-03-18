@@ -895,3 +895,31 @@ body {
     0%, 60%, 100% { transform: translateY(0); opacity: 0.6; }
     30% { transform: translateY(-4px); opacity: 1; }
 }
+.typing-indicator.timeout-alert {
+    background-color: #fff3cd;
+    border-left: 4px solid #ffc107;
+}
+
+.typing-indicator.timeout-alert .typing-text {
+    color: #856404;
+    font-weight: 500;
+}
+
+.system-message.error-message {
+    background-color: #f8d7da;
+    border-left: 4px solid #dc3545;
+    color: #721c24;
+    margin: 1rem 0;
+    align-self: center;
+    max-width: 80%;
+}
+
+.error-message .message-content {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.error-message i {
+    font-size: 1.2em;
+}

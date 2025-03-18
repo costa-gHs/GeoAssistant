@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GeoCarbonite - Assistente de Componentes</title>
+
+    <!-- CSS Principal -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='base.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='chat_styles.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='component_styles.css') }}">
+
+    <!-- Bibliotecas Externas CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/styles/github.min.css">
+
+    <!-- Scripts Essenciais Sem Defer -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@2.4.0/dist/purify.min.js"></script>
+
+    <!-- Highlight.js com Inicialização Atrasada -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/highlight.min.js"></script>
+    <script>hljs.initHighlightingOnLoad();</script>
+</head>
+<body>
+    <div class="premodal-container">
+        <div class="diagnostic-header">
+            <h2>Diagnóstico de Componentes</h2>
+            <p>Selecione os grupos de componentes relacionados ao seu problema:</p>
+        </div>
+
+        <div class="component-grid">
+            <div class="component-card" data-group="MOTOR">
+                <div class="component-icon">
+                    <i class="fas fa-cog"></i>
+                </div>
+                <div class="component-name">MOTOR</div>
+                <div class="component-description">Problemas relacionados ao motor e seus subsistemas</div>
+            </div>
+
+            <div class="component-card" data-group="TRANSMISSÃO">
+                <div class="component-icon">
+                    <i class="fas fa-gear"></i>
+                </div>
+                <div class="component-name">TRANSMISSÃO</div>
+                <div class="component-description">Problemas relacionados ao sistema de transmissão e embreagem</div>
+            </div>
+
+            <div class="component-card" data-group="SISTEMA ESTABILIDADE">
+                <div class="component-icon">
+                    <i class="fas fa-balance-scale"></i>
+                </div>
+                <div class="component-name">SISTEMA ESTABILIDADE</div>
+                <div class="component-description">Problemas com suspensão, nivelamento e estabilidade da máquina</div>
+            </div>
+
+            <div class="component-card" data-group="SISTEMA ELÉTRICO">
+                <div class="component-icon">
+                    <i class="fas fa-bolt"></i>
+                </div>
+                <div class="component-name">SISTEMA ELÉTRICO</div>
+                <div class="component-description">Problemas com sistema elétrico, bateria, iluminação e sensores</div>
+            </div>
+
+            <div class="component-card" data-group="ESTRUTURA">
+                <div class="component-icon">
+                    <i class="fas fa-cubes"></i>
+                </div>
+                <div class="component-name">ESTRUTURA</div>
+                <div class="component-description">Problemas estruturais, chassis, soldas e componentes físicos</div>
+            </div>
+
+            <div class="component-card" data-group="INDUSTRIAL CANA">
+                <div class="component-icon">
+                    <i class="fas fa-leaf"></i>
+                </div>
+                <div class="component-name">INDUSTRIAL CANA</div>
+                <div class="component-description">Problemas relacionados ao processamento industrial de cana</div>
+            </div>
+
+            <div class="component-card" data-group="CABINE">
+                <div class="component-icon">
+                    <i class="fas fa-user-shield"></i>
+                </div>
+                <div class="component-name">CABINE</div>
+                <div class="component-description">Problemas com a cabine do operador e seus componentes</div>
+            </div>
+
+            <div class="component-card" data-group="SEM GRUPO">
+                <div class="component-icon">
+                    <i class="fas fa-question-circle"></i>
+                </div>
+                <div class="component-name">SEM GRUPO</div>
+                <div class="component-description">Problemas não classificados ou que afetam múltiplos grupos</div>
+            </div>
+        </div>
+
+        <button id="startDiagnostic" class="diagnostic-submit" disabled>
+            Iniciar Diagnóstico
+        </button>
+    </div>
+
+    <!-- Interface de Chat (inicialmente oculta) -->
+    <div id="chatContainer" class="main-container" style="display: none;">
+        <header class="chat-header">
+            <div class="header-content">
+                <div class="brand">
+                    <i class="fas fa-tractor"></i>
+                    <span>GeoCarbonite</span>
+                    <div class="status-indicator"></div>
+                </div>
+            </div>
+            <nav class="nav-links">
+                <a href="{{ url_for('home') }}">Home</a>
+                {% if session['is_admin'] %}
+                    <a href="{{ url_for('admin_routes.dashboard') }}" class="admin-link">Admin</a>
+                {% endif %}
+                <a href="{{ url_for('logout') }}">Logout</a>
+            </nav>
+        </header>
+
+        <div class="content-grid">
+            <!-- Painel de Componentes -->
+            <aside class="systems-panel">
+                <h3><i class="fas fa-cogs"></i> Componentes</h3>
+                <div id="selectedComponentCard" class="system-card">
+                    <div class="card-header">
+                        <i class="component-icon fas fa-cog"></i>
+                        <h4 id="selectedComponentName">Componente Selecionado</h4>
+                    </div>
+                    <div class="component-description" id="selectedComponentDescription">
+                        Descrição do componente selecionado
+                    </div>
+                    <div class="component-actions">
+                        <button id="changeComponent" class="change-component-btn">
+                            <i class="fas fa-exchange-alt"></i> Alterar Componente
+                        </button>
+                    </div>
+                </div>
+
+                <div class="related-components">
+                    <h3><i class="fas fa-link"></i> Componentes Relacionados</h3>
+                    <div class="related-list" id="relatedComponentsList">
+                        <!-- Lista de componentes relacionados será preenchida via JavaScript -->
+                    </div>
+                </div>
+            </aside>
+
+            <!-- Área de Chat -->
+            <main class="chat-area">
+                <div id="chat-window" class="chat-messages">
+                    <div class="context-message">
+                        <div class="context-header">
+                            <i class="fas fa-info-circle"></i>
+                            Contexto do Componente
+                        </div>
+                        <div class="context-content" id="componentContext">
+                            <!-- Preenchido via JavaScript -->
+                        </div>
+                    </div>
+                </div>
+
+                <div class="chat-input">
+                    <input type="text" id="user-input" placeholder="Descreva o problema...">
+                    <button id="send-button" class="btn-primary">
+                        <i class="fas fa-paper-plane"></i>
+                    </button>
+                    <button id="downloadButton" class="btn-primary">
+                        <i class="fas fa-download"></i>
+                    </button>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script>
+        // Configuração do Marked
+        marked.setOptions({
+            highlight: (code, lang) => hljs.highlightAuto(code).value,
+            breaks: true,
+            gfm: true
+        });
+
+        // Funções auxiliares
+        const formatTimestamp = () => new Date().toLocaleTimeString('pt-BR', {
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+
+        // Gestão de Componentes
+        document.addEventListener('DOMContentLoaded', () => {
+            const componentCards = document.querySelectorAll('.component-card');
+            const startButton = document.getElementById('startDiagnostic');
+            let selectedComponent = null;
+
+            // Seleção de componente
+            componentCards.forEach(card => {
+                card.addEventListener('click', () => {
+                    // Remover seleção anterior
+                    componentCards.forEach(c => c.classList.remove('selected'));
+
+                    // Aplicar nova seleção
+                    card.classList.add('selected');
+                    selectedComponent = card.dataset.group;
+
+                    // Habilitar botão de iniciar
+                    startButton.disabled = false;
+                });
+            });
+
+            // Ação do botão para iniciar diagnóstico
+            startButton.addEventListener('click', async () => {
+                if (!selectedComponent) {
+                    alert('Por favor, selecione um grupo de componentes.');
+                    return;
+                }
+
+                try {
+                    // Formatar contexto do componente
+                    const componentContext = `🔍 GRUPO DE COMPONENTE SELECIONADO: ${selectedComponent}
+Este diagnóstico está focado em problemas relacionados ao grupo ${selectedComponent}. Por favor, detalhe os sintomas específicos que você está observando.`;
+
+                    // Guardar contexto na sessão
+                    sessionStorage.setItem('componentContext', componentContext);
+                    sessionStorage.setItem('selectedComponent', selectedComponent);
+
+                    const assistantId = new URLSearchParams(window.location.search).get('assistant_id');
+                    const response = await fetch('/nova_conversa', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            assistant_id: assistantId,
+                            contexto_tecnico: componentContext
+                        })
+                    });
+
+                    const data = await response.json();
+                    if(data.success) {
+                        sessionStorage.setItem('conversa_id', data.conversa_id);
+                        sessionStorage.setItem('thread_id', data.thread_id);
+                        sessionStorage.setItem('selected_assistant_id', assistantId);
+
+                        // Transição visual
+                        document.querySelector('.premodal-container').style.display = 'none';
+                        document.getElementById('chatContainer').style.display = 'block';
+
+                        // Configurar interface com o componente selecionado
+                        document.getElementById('selectedComponentName').textContent = selectedComponent;
+                        document.getElementById('componentContext').textContent = componentContext;
+
+                        // Configurar ícone do componente
+                        const iconClass = getComponentIcon(selectedComponent);
+                        document.querySelector('#selectedComponentCard .component-icon').className = `component-icon fas ${iconClass}`;
+
+                        // Obter a descrição do card selecionado
+                        const selectedCard = document.querySelector(`.component-card.selected`);
+                        if (selectedCard) {
+                            const description = selectedCard.querySelector('.component-description').textContent;
+                            document.getElementById('selectedComponentDescription').textContent = description;
+                        }
+
+                        // Preencher lista de componentes relacionados
+                        populateRelatedComponents(selectedComponent);
+                    }
+                } catch (error) {
+                    console.error('Erro:', error);
+                    alert('Ocorreu um erro. Por favor, recarregue a página e tente novamente.');
+                }
+            });
+
+            // Botão para alterar componente
+            document.getElementById('changeComponent').addEventListener('click', () => {
+                document.getElementById('chatContainer').style.display = 'none';
+                document.querySelector('.premodal-container').style.display = 'block';
+            });
+
+            // Funções auxiliares
+            function getComponentIcon(componentName) {
+                const iconMap = {
+                    'MOTOR': 'fa-cog',
+                    'TRANSMISSÃO': 'fa-gear',
+                    'SISTEMA ESTABILIDADE': 'fa-balance-scale',
+                    'SISTEMA ELÉTRICO': 'fa-bolt',
+                    'ESTRUTURA': 'fa-cubes',
+                    'INDUSTRIAL CANA': 'fa-leaf',
+                    'CABINE': 'fa-user-shield',
+                    'SEM GRUPO': 'fa-question-circle'
+                };
+                return iconMap[componentName] || 'fa-cog';
+            }
+
+            function populateRelatedComponents(mainComponent) {
+                const relatedList = document.getElementById('relatedComponentsList');
+                relatedList.innerHTML = '';
+
+                // Define componentes relacionados para cada grupo
+                const relatedMap = {
+                    'MOTOR': ['SISTEMA ELÉTRICO', 'TRANSMISSÃO'],
+                    'TRANSMISSÃO': ['MOTOR', 'ESTRUTURA'],
+                    'SISTEMA ESTABILIDADE': ['ESTRUTURA', 'CABINE'],
+                    'SISTEMA ELÉTRICO': ['MOTOR', 'CABINE'],
+                    'ESTRUTURA': ['SISTEMA ESTABILIDADE', 'TRANSMISSÃO'],
+                    'INDUSTRIAL CANA': ['ESTRUTURA', 'MOTOR'],
+                    'CABINE': ['SISTEMA ELÉTRICO', 'SISTEMA ESTABILIDADE'],
+                    'SEM GRUPO': ['MOTOR', 'SISTEMA ELÉTRICO', 'ESTRUTURA']
+                };
+
+                const relatedComponents = relatedMap[mainComponent] || [];
+
+                relatedComponents.forEach(component => {
+                    const item = document.createElement('div');
+                    item.className = 'related-component-item';
+                    item.innerHTML = `
+                        <i class="fas ${getComponentIcon(component)}"></i>
+                        <span>${component}</span>
+                    `;
+                    relatedList.appendChild(item);
+
+                    // Adicionar evento de clique para mudar o componente
+                    item.addEventListener('click', () => {
+                        const componentCard = Array.from(componentCards).find(card =>
+                            card.dataset.group === component
+                        );
+                        if (componentCard) {
+                            componentCards.forEach(c => c.classList.remove('selected'));
+                            componentCard.classList.add('selected');
+                            selectedComponent = component;
+                            startButton.disabled = false;
+
+                            // Simular clique no botão de iniciar
+                            startButton.click();
+                        }
+                    });
+                });
+            }
+        });
+
+        // Sistema principal de chat
+        {% if 'api_key' in session %}
+        const chatWindow = document.getElementById('chat-window');
+        const userInput = document.getElementById('user-input');
+        const sendButton = document.getElementById('send-button');
+
+        async function downloadConversation() {
+            const conversaId = sessionStorage.getItem('conversa_id');
+            if (!conversaId) {
+                console.error('ID da conversa não encontrado');
+                return;
+            }
+
+            try {
+                const response = await fetch(`/conversa/${conversaId}`);
+                const data = await response.json();
+
+                if (!data.mensagens) {
+                    throw new Error('Nenhuma mensagem encontrada');
+                }
+
+                // Formatar o conteúdo
+                let content = '=== RELATÓRIO DE CONVERSA ===\n\n';
+
+                // Adicionar informações do componente
+                const componentContext = sessionStorage.getItem('componentContext');
+                const selectedComponent = sessionStorage.getItem('selectedComponent');
+
+                content += '=== CONTEXTO DO COMPONENTE ===\n';
+                content += `Grupo de Componente: ${selectedComponent}\n`;
+                content += componentContext + '\n\n';
+
+                // Adicionar informações da conversa
+                content += `Data: ${new Date().toLocaleDateString()}\n`;
+                content += `Hora: ${new Date().toLocaleTimeString()}\n`;
+                content += `ID da Conversa: ${conversaId}\n`;
+                content += `Usuário: ${sessionStorage.getItem('usuario_nome')}\n\n`;
+
+                // Adicionar mensagens
+                content += '=== MENSAGENS ===\n\n';
+                data.mensagens.forEach(msg => {
+                    content += `[${msg.data_hora_envio}]\n`;
+                    content += `Usuário: ${msg.usuario}\n`;
+                    content += `Assistente: ${msg.gpt}\n\n`;
+                });
+
+                // Criar e baixar o arquivo
+                const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `diagnostico_${selectedComponent}_${conversaId}.txt`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+
+            } catch (error) {
+                console.error('Erro ao baixar conversa:', error);
+                alert('Erro ao baixar a conversa. Por favor, tente novamente.');
+            }
+        }
+
+        // Função para criar indicador de digitação
+        function createTypingIndicator() {
+            const indicator = document.createElement('div');
+            indicator.className = 'typing-indicator';
+
+            const avatar = document.createElement('div');
+            avatar.className = 'typing-avatar';
+            avatar.innerHTML = '<i class="fas fa-robot"></i>';
+
+            const dots = document.createElement('div');
+            dots.className = 'typing-dots';
+
+            for (let i = 0; i < 3; i++) {
+                const dot = document.createElement('div');
+                dot.className = 'typing-dot';
+                dots.appendChild(dot);
+            }
+
+            const text = document.createElement('div');
+            text.className = 'typing-text';
+            text.textContent = 'Analisando componente...';
+
+            indicator.appendChild(avatar);
+            indicator.appendChild(dots);
+            indicator.appendChild(text);
+
+            return indicator;
+        }
+
+        function createMessage(content, type, messageId) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `chat-message ${type}-message`;
+            messageDiv.dataset.messageId = messageId;
+
+            const messageContent = document.createElement('div');
+            messageContent.className = 'message-content';
+
+            if (type === 'assistant') {
+                messageContent.innerHTML = DOMPurify.sanitize(marked.parse(content));
+
+                // Adicionar sistema de feedback
+                const feedbackDiv = document.createElement('div');
+                feedbackDiv.className = 'message-feedback';
+                feedbackDiv.innerHTML = `
+                    <button class="feedback-btn like" title="Resposta útil">
+                        <i class="fas fa-thumbs-up"></i>
+                        <span>Útil</span>
+                    </button>
+                    <button class="feedback-btn dislike" title="Resposta não útil">
+                        <i class="fas fa-thumbs-down"></i>
+                        <span>Não útil</span>
+                    </button>
+                `;
+
+                // Eventos de feedback
+                feedbackDiv.querySelector('.like').addEventListener('click', () =>
+                    handleFeedback(true, messageId));
+                feedbackDiv.querySelector('.dislike').addEventListener('click', () =>
+                    handleFeedback(false, messageId));
+
+                messageDiv.append(messageContent, feedbackDiv);
+            } else {
+                messageContent.textContent = content;
+                messageDiv.appendChild(messageContent);
+            }
+
+            // Timestamp
+            const timestamp = document.createElement('div');
+            timestamp.className = 'message-timestamp';
+            timestamp.textContent = formatTimestamp();
+            messageDiv.appendChild(timestamp);
+
+            return messageDiv;
+        }
+
+        // Sistema de feedback
+        function handleFeedback(isLike, messageId) {
+            fetch('/feedback', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    mensagem_id: messageId,
+                    tipo: isLike
+                })
+            })
+            .then(() => {
+                // Mostrar mensagem de feedback
+                const toast = document.createElement('div');
+                toast.className = `toast ${isLike ? 'success' : 'error'}`;
+                toast.textContent = isLike ? 'Obrigado pelo feedback positivo!' : 'Feedback negativo registrado';
+                document.body.appendChild(toast);
+
+                // Remover após alguns segundos
+                setTimeout(() => {
+                    toast.remove();
+                }, 3000);
+            })
+            .catch(error => console.error('Erro ao enviar feedback:', error));
+        }
+
+        function showErrorMessage(message) {
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'chat-message system-message error-message';
+
+            const messageContent = document.createElement('div');
+            messageContent.className = 'message-content';
+            messageContent.innerHTML = `<i class="fas fa-exclamation-circle"></i> ${message}`;
+
+            errorDiv.appendChild(messageContent);
+            chatWindow.appendChild(errorDiv);
+            chatWindow.scrollTop = chatWindow.scrollHeight;
+        }
+
+        // Envio de mensagens
+        function sendMessage() {
+            const message = userInput.value.trim();
+            if (!message) return;
+
+            // Obter IDs do sessionStorage
+            const assistantId = sessionStorage.getItem('selected_assistant_id');
+            const threadId = sessionStorage.getItem('thread_id');
+            const conversaId = sessionStorage.getItem('conversa_id');
+            const technicalContext = sessionStorage.getItem('technicalContext') ||
+                                    sessionStorage.getItem('componentContext');
+
+            // Verificar se todos os IDs estão presentes
+            if (!assistantId || !threadId || !conversaId) {
+                alert('Erro de configuração da conversa. Recarregue a página.');
+                return;
+            }
+
+            // Adicionar mensagem do usuário
+            chatWindow.appendChild(createMessage(message, 'user'));
+            userInput.value = '';
+
+            // Adicionar indicador de digitação
+            const typingIndicator = createTypingIndicator();
+            chatWindow.appendChild(typingIndicator);
+            chatWindow.scrollTop = chatWindow.scrollHeight;
+
+            // Enviar para o backend
+            fetch('/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    assistant_id: assistantId,
+                    message: message,
+                    thread_id: threadId,
+                    conversa_id: conversaId,
+                    technical_context: technicalContext
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'pending') {
+                    sessionStorage.setItem('thread_id', data.thread_id);
+                    pollRunStatus(data.thread_id, data.run_id, data.conversa_id, message);
+                }
+            })
+            .catch(error => {
+                console.error('Erro ao enviar mensagem:', error);
+                typingIndicator.remove();
+                showErrorMessage('Erro ao enviar mensagem. Tente novamente.');
+            });
+        }
+
+        // Verificação de status
+        function pollRunStatus(threadId, runId, conversaId, message) {
+            const typingIndicator = document.querySelector('.typing-indicator');
+            let pollingCount = 0;
+            const MAX_POLLING_ATTEMPTS = 90; // 90 segundos (com 1 segundo de intervalo)
+            let isRetrying = false;
+
+            const checkStatus = () => {
+                pollingCount++;
+
+                // Verificar se atingimos o limite de tempo (90 segundos)
+                if (pollingCount >= MAX_POLLING_ATTEMPTS && !isRetrying) {
+                    isRetrying = true;
+
+                    // Atualizar o indicador de digitação para mostrar que estamos tentando novamente
+                    if (typingIndicator) {
+                        typingIndicator.querySelector('.typing-text').textContent = 'Resposta demorando mais que o esperado. Tentando novamente...';
+                        typingIndicator.classList.add('timeout-alert');
+                    }
+
+                    console.log("Timeout detectado, tentando nova requisição...");
+
+                    // Realizar uma nova requisição na mesma thread
+                    fetch('/chat', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            assistant_id: sessionStorage.getItem('selected_assistant_id'),
+                            message: message || "Continue o processamento da mensagem anterior.",
+                            thread_id: threadId,
+                            conversa_id: conversaId,
+                            technical_context: sessionStorage.getItem('technicalContext') || sessionStorage.getItem('componentContext'),
+                            is_retry: true // Indicar que é uma tentativa de recuperação
+                        })
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.status === 'pending') {
+                            // Resetar o contador e continuar o polling com o novo runId
+                            pollingCount = 0;
+                            isRetrying = false;
+
+                            if (typingIndicator) {
+                                typingIndicator.querySelector('.typing-text').textContent = 'Processando...';
+                                typingIndicator.classList.remove('timeout-alert');
+                            }
+
+                            // Continuar com o novo runId
+                            pollRunStatus(data.thread_id, data.run_id, data.conversa_id, message);
+                        } else {
+                            // Caso não tenha conseguido iniciar um novo run
+                            if (typingIndicator) {
+                                typingIndicator.remove();
+                            }
+                            showErrorMessage("Não foi possível obter resposta. Por favor, tente enviar sua mensagem novamente.");
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Erro ao tentar recuperar a resposta:', error);
+                        if (typingIndicator) {
+                            typingIndicator.remove();
+                        }
+                        showErrorMessage("Ocorreu um erro ao tentar obter a resposta. Por favor, tente novamente.");
+                    });
+
+                    return; // Interromper o polling atual
+                }
+
+                // Polling normal
+                fetch(`/check_run?thread_id=${threadId}&run_id=${runId}&conversa_id=${conversaId}&message=${encodeURIComponent(message || '')}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.status === 'completed') {
+                            // Remove o indicador de digitação
+                            if (typingIndicator) {
+                                typingIndicator.remove();
+                            }
+
+                            // Adiciona a resposta
+                            chatWindow.appendChild(createMessage(data.response, 'assistant', data.mensagem_id));
+                            chatWindow.scrollTop = chatWindow.scrollHeight;
+                        } else if (data.status === 'failed') {
+                            // Remove o indicador de digitação em caso de falha
+                            if (typingIndicator) {
+                                typingIndicator.remove();
+                            }
+                            showErrorMessage("Ocorreu um erro ao processar sua mensagem. Por favor, tente novamente.");
+                        } else {
+                            // Continua o polling
+                            setTimeout(checkStatus, 1000);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Erro no polling:', error);
+                        // Continuar tentando mesmo com erro
+                        setTimeout(checkStatus, 1000);
+                    });
+            };
+
+            checkStatus();
+        }
+
+        // Event listeners
+        sendButton.addEventListener('click', sendMessage);
+        userInput.addEventListener('keypress', e => e.key === 'Enter' && sendMessage());
+
+        // Adicionar event listeners quando a página carregar
+        document.addEventListener('DOMContentLoaded', () => {
+            const downloadButton = document.getElementById('downloadButton');
+            if (downloadButton) {
+                downloadButton.addEventListener('click', downloadConversation);
+            }
+
+            const urlParams = new URLSearchParams(window.location.search);
+            const assistantId = urlParams.get('assistant_id');
+            if (assistantId) {
+                sessionStorage.setItem('selected_assistant_id', assistantId);
+            }
+        });
+
+        {% endif %}
+    </script>
+</body>
+</html>

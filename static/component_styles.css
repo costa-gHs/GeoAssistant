@@ -1,0 +1,235 @@
+/* Estilos específicos para o assistente de componentes */
+.component-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1.5rem;
+    margin: 2rem 0;
+}
+
+.component-card {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.component-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 4px;
+    background: transparent;
+    transition: background-color 0.3s ease;
+}
+
+.component-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+}
+
+.component-card:hover::before {
+    background: #4F46E5;
+}
+
+.component-card.selected {
+    border-color: #4F46E5;
+    box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.3);
+}
+
+.component-card.selected::before {
+    background: #4F46E5;
+}
+
+.component-icon {
+    font-size: 2.5rem;
+    color: #4F46E5;
+    margin-bottom: 1rem;
+    height: 60px;
+    width: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(79, 70, 229, 0.1);
+    border-radius: 50%;
+}
+
+.component-name {
+    font-weight: 600;
+    font-size: 1.25rem;
+    color: #1e293b;
+    margin-bottom: 0.75rem;
+}
+
+.component-description {
+    color: #64748b;
+    font-size: 0.9rem;
+    line-height: 1.4;
+}
+
+/* Estilizações para o painel de componentes */
+.related-components {
+    margin-top: 2rem;
+    background: #fff;
+    border-radius: 8px;
+    padding: 1.5rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.related-components h3 {
+    font-size: 1rem;
+    color: #64748b;
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.related-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.related-component-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    border-radius: 8px;
+    background: #f8fafc;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.related-component-item:hover {
+    background: #f1f5f9;
+    transform: translateX(5px);
+}
+
+.related-component-item i {
+    color: #4F46E5;
+    font-size: 1.1rem;
+    width: 20px;
+    text-align: center;
+}
+
+.component-actions {
+    margin-top: 1rem;
+    width: 100%;
+}
+
+.change-component-btn {
+    width: 100%;
+    padding: 0.75rem;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    color: #64748b;
+    font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.change-component-btn:hover {
+    background: #f1f5f9;
+    color: #4F46E5;
+}
+
+/* Toast notifications */
+.toast {
+    position: fixed;
+    bottom: 2rem;
+    left: 50%;
+    transform: translateX(-50%);
+    background: white;
+    padding: 1rem 1.5rem;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    z-index: 1000;
+    animation: toastSlideUp 0.3s ease forwards;
+}
+
+.toast.success {
+    border-left: 4px solid #10B981;
+}
+
+.toast.error {
+    border-left: 4px solid #EF4444;
+}
+
+@keyframes toastSlideUp {
+    from {
+        opacity: 0;
+        transform: translate(-50%, 20px);
+    }
+    to {
+        opacity: 1;
+        transform: translate(-50%, 0);
+    }
+}
+
+/* Responsividade */
+@media (max-width: 768px) {
+    .component-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .component-card {
+        padding: 1.25rem;
+    }
+
+    .component-icon {
+        font-size: 2rem;
+        height: 50px;
+        width: 50px;
+    }
+
+    .component-name {
+        font-size: 1.1rem;
+    }
+}
+.typing-indicator.timeout-alert {
+    background-color: #fff3cd;
+    border-left: 4px solid #ffc107;
+}
+
+.typing-indicator.timeout-alert .typing-text {
+    color: #856404;
+    font-weight: 500;
+}
+
+.system-message.error-message {
+    background-color: #f8d7da;
+    border-left: 4px solid #dc3545;
+    color: #721c24;
+    margin: 1rem 0;
+    align-self: center;
+    max-width: 80%;
+}
+
+.error-message .message-content {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.error-message i {
+    font-size: 1.2em;
+}

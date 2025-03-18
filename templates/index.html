@@ -300,58 +300,139 @@
         const conversaId = sessionStorage.getItem('conversa_id');
         if (!conversaId) {
             console.error('ID da conversa não encontrado');
+            alert('Não foi possível identificar a conversa atual. Verifique se você iniciou um diagnóstico.');
             return;
         }
 
         try {
-            const response = await fetch(`/conversa/${conversaId}`);
+            // Adicionar indicador visual de download
+            const downloadButton = document.getElementById('downloadButton');
+            const originalIcon = downloadButton.innerHTML;
+            downloadButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+            downloadButton.disabled = true;
+
+            // Obter os dados completos da conversa
+            const response = await fetch(`/conversa/${conversaId}?format=full`);
             const data = await response.json();
 
-            if (!data.mensagens) {
-                throw new Error('Nenhuma mensagem encontrada');
+            if (!data.mensagens || data.mensagens.length === 0) {
+                throw new Error('Nenhuma mensagem encontrada na conversa');
             }
 
-            // Formatar o conteúdo
-            let content = '=== RELATÓRIO DE CONVERSA ===\n\n';
+            // Metadados do relatório
+            const hoje = new Date();
+            const dataFormatada = hoje.toLocaleDateString('pt-BR');
+            const horaFormatada = hoje.toLocaleTimeString('pt-BR');
+            const nomeTecnico = sessionStorage.getItem('usuario_nome') || 'Técnico';
 
-            // Adicionar relatório técnico se existir
-            const relatorioTecnico = sessionStorage.getItem('preChatResponses');
-            if (relatorioTecnico) {
-                content += '=== RELATÓRIO TÉCNICO ===\n';
-                content += relatorioTecnico + '\n\n';
+            // === ESTRUTURA DO RELATÓRIO ===
+            // Cabeçalho
+            let content = `=== RELATÓRIO TÉCNICO DE DIAGNÓSTICO ===\n\n`;
+            content += `Data: ${dataFormatada}\n`;
+            content += `Hora: ${horaFormatada}\n`;
+            content += `Máquina: Colheitadeira CH570\n`;
+            content += `Técnico: ${nomeTecnico}\n`;
+            content += `ID da Conversa: ${conversaId}\n\n`;
+
+            // Parte 1: Problemas Relatados
+            content += `=== PROBLEMAS RELATADOS ===\n`;
+            const technicalContext = sessionStorage.getItem('technicalContext');
+            if (technicalContext) {
+                content += technicalContext + '\n\n';
+            } else {
+                content += "Informações sobre problemas relatados não disponíveis.\n\n";
             }
 
-            // Adicionar informações da conversa
-            content += `Data: ${new Date().toLocaleDateString()}\n`;
-            content += `Hora: ${new Date().toLocaleTimeString()}\n`;
-            content += `ID da Conversa: ${conversaId}\n`;
-            content += `Usuário: ${sessionStorage.getItem('usuario_nome')}\n\n`;
+            // Parte 2: Status Técnico
+            content += `=== STATUS TÉCNICO ===\n`;
 
-            // Adicionar mensagens
-            content += '=== MENSAGENS ===\n\n';
+            // Tentativa de extrair statuses técnicos de alguma mensagem do assistente
+            const statusMsg = data.mensagens.find(msg =>
+                msg.gpt.includes("Status Técnico") ||
+                msg.gpt.includes("Checklist") ||
+                msg.gpt.includes("1. ") && msg.gpt.includes("Sim") || msg.gpt.includes("Não")
+            );
+
+            if (statusMsg) {
+                // Tenta extrair checklist numerado
+                const checklistItems = statusMsg.gpt.match(/\d+\.\s+[^:]+:\s*(Sim|Não)/g);
+                if (checklistItems && checklistItems.length > 0) {
+                    content += checklistItems.join('\n') + '\n\n';
+                } else {
+                    content += "Status técnico detectado mas não foi possível extrair itens formatados.\n\n";
+                }
+            } else {
+                content += "Nenhum checklist de status técnico encontrado.\n\n";
+            }
+
+            // Parte 3: Diagnóstico Final
+            content += `=== DIAGNÓSTICO FINAL ===\n`;
+
+            // Estratégia: tentar encontrar mensagens de conclusão/diagnóstico
+            const mensagensDiagnostico = data.mensagens
+                .filter(msg => msg.gpt.includes("diagnóstico") ||
+                               msg.gpt.includes("conclusão") ||
+                               msg.gpt.includes("Resumo") ||
+                               msg.gpt.includes("Ações Práticas") ||
+                               msg.gpt.includes("Recomendações"))
+                .slice(-2); // Pegamos até 2 das últimas mensagens relevantes
+
+            if (mensagensDiagnostico.length > 0) {
+                // Usar a mensagem mais recente que parece ser um diagnóstico
+                content += mensagensDiagnostico[mensagensDiagnostico.length-1].gpt + '\n\n';
+            } else {
+                // Fallback: usar a última mensagem do assistente
+                const ultimasMensagens = data.mensagens.filter(msg => msg.gpt.trim() !== '');
+                if (ultimasMensagens.length > 0) {
+                    content += ultimasMensagens[ultimasMensagens.length-1].gpt + '\n\n';
+                } else {
+                    content += "Nenhum diagnóstico conclusivo encontrado.\n\n";
+                }
+            }
+
+            // Parte 4: Histórico completo de mensagens
+            content += `=== HISTÓRICO COMPLETO DE MENSAGENS ===\n\n`;
             data.mensagens.forEach(msg => {
-                content += `[${msg.data_hora_envio}]\n`;
-                content += `Usuário: ${msg.usuario}\n`;
-                content += `Assistente: ${msg.gpt}\n\n`;
+                if (msg.usuario.trim() !== '' || msg.gpt.trim() !== '') {
+                    content += `[${msg.data_hora_envio}]\n`;
+                    content += `Técnico: ${msg.usuario}\n`;
+                    content += `Sistema: ${msg.gpt}\n\n`;
+                }
             });
 
-            // Criar e baixar o arquivo
+            // Gerar o arquivo
+            const nomeArquivo = `diagnostico_CH570_${hoje.toISOString().slice(0,10)}_${conversaId}.txt`;
             const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
             const url = window.URL.createObjectURL(blob);
+
+            // Criar link de download e disparar
             const a = document.createElement('a');
             a.href = url;
-            a.download = `conversa_${conversaId}.txt`;
+            a.download = nomeArquivo;
             document.body.appendChild(a);
             a.click();
-            document.body.removeChild(a);
-            window.URL.revokeObjectURL(url);
 
+            // Limpar recursos
+            setTimeout(() => {
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+                downloadButton.innerHTML = originalIcon;
+                downloadButton.disabled = false;
+            }, 100);
+
+            return true;
         } catch (error) {
             console.error('Erro ao baixar conversa:', error);
-            alert('Erro ao baixar a conversa. Por favor, tente novamente.');
+            alert(`Erro ao baixar a conversa: ${error.message}. Por favor, tente novamente.`);
+
+            // Restaurar botão
+            const downloadButton = document.getElementById('downloadButton');
+            downloadButton.innerHTML = '<i class="fas fa-download"></i>';
+            downloadButton.disabled = false;
+
+            return false;
         }
     }
-
     // Função para criar indicador de digitação
     function createTypingIndicator() {
         const indicator = document.createElement('div');

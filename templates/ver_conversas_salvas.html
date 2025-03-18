@@ -3,92 +3,696 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Visualizador Simples de Conversas</title>
+    <title>GeoCarbonite - Visualizador de Diagnósticos</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
-        body { font-family: Arial; margin: 20px; }
-        .container { max-width: 800px; margin: 0 auto; }
-        .status-item { margin: 5px 0; padding: 5px; border: 1px solid #ddd; }
-        .message { margin: 10px 0; padding: 10px; background: #f5f5f5; }
-        .sim { color: green; }
-        .nao { color: red; }
+        :root {
+            --primary: #2c5282;
+            --primary-light: #4a6fa5;
+            --primary-dark: #1e3a5f;
+            --accent: #f59e0b;
+            --danger: #e53e3e;
+            --success: #38a169;
+            --gray-100: #f7fafc;
+            --gray-200: #edf2f7;
+            --gray-300: #e2e8f0;
+            --gray-500: #a0aec0;
+            --gray-700: #4a5568;
+            --gray-900: #1a202c;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, sans-serif;
+        }
+
+        body {
+            background-color: var(--gray-100);
+            color: var(--gray-900);
+            line-height: 1.5;
+            padding: 0;
+            margin: 0;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 2rem 1rem;
+        }
+
+        header {
+            background-color: var(--primary);
+            color: white;
+            padding: 1rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        header h1 {
+            font-size: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        header h1 i {
+            font-size: 1.25rem;
+        }
+
+        .viewer-card {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            margin: 1.5rem 0;
+            padding: 1.5rem;
+        }
+
+        .file-upload {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 2rem;
+            border: 2px dashed var(--gray-300);
+            border-radius: 8px;
+            background: var(--gray-100);
+            text-align: center;
+            transition: all 0.3s ease;
+        }
+
+        .file-upload:hover {
+            border-color: var(--primary-light);
+            background: var(--gray-200);
+        }
+
+        .file-upload i {
+            font-size: 2.5rem;
+            color: var(--primary);
+            margin-bottom: 1rem;
+        }
+
+        .file-upload p {
+            margin-bottom: 1.5rem;
+            color: var(--gray-700);
+        }
+
+        .upload-btn {
+            background: var(--primary);
+            color: white;
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            transition: all 0.2s;
+        }
+
+        .upload-btn:hover {
+            background: var(--primary-dark);
+        }
+
+        .upload-btn input {
+            display: none;
+        }
+
+        #fileInfo {
+            margin-top: 1rem;
+            font-size: 0.875rem;
+            color: var(--gray-700);
+        }
+
+        #diagnosticoViewer {
+            display: none;
+        }
+
+        .diagnostico-header {
+            background: var(--primary);
+            color: white;
+            padding: 1.25rem;
+            border-radius: 8px 8px 0 0;
+            margin-top: 2rem;
+        }
+
+        .diagnostico-header h2 {
+            font-size: 1.25rem;
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .meta-info {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1.5rem;
+            margin-top: 0.5rem;
+            font-size: 0.875rem;
+        }
+
+        .meta-item {
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+        }
+
+        .content-section {
+            border: 1px solid var(--gray-300);
+            border-top: none;
+            border-radius: 0 0 8px 8px;
+            overflow: hidden;
+        }
+
+        .section-title {
+            background: var(--gray-200);
+            padding: 0.75rem 1rem;
+            font-weight: 600;
+            color: var(--primary-dark);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            border-bottom: 1px solid var(--gray-300);
+        }
+
+        .section-content {
+            padding: 1.25rem;
+            background: white;
+        }
+
+        .problem-list {
+            list-style: none;
+        }
+
+        .problem-item {
+            margin-bottom: 1rem;
+            padding-left: 1.5rem;
+            position: relative;
+        }
+
+        .problem-item::before {
+            content: "•";
+            color: var(--primary);
+            font-weight: bold;
+            font-size: 1.25rem;
+            position: absolute;
+            left: 0;
+        }
+
+        .problem-details {
+            margin-top: 0.25rem;
+            color: var(--gray-700);
+            padding-left: 1rem;
+            position: relative;
+        }
+
+        .problem-details::before {
+            content: "→";
+            color: var(--gray-500);
+            position: absolute;
+            left: 0;
+        }
+
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 1rem;
+        }
+
+        .status-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.75rem 1rem;
+            background: var(--gray-100);
+            border-radius: 6px;
+            border-left: 3px solid var(--gray-300);
+        }
+
+        .status-label {
+            font-weight: 500;
+            flex: 1;
+        }
+
+        .status-value {
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+        }
+
+        .status-value.sim {
+            color: var(--success);
+        }
+
+        .status-value.nao {
+            color: var(--danger);
+        }
+
+        .final-diagnosis {
+            background-color: #fffbeb;
+            border-left: 4px solid var(--accent);
+            padding: 1rem;
+            margin: 1rem 0;
+        }
+
+        .mensagens-container {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .mensagem {
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .mensagem-header {
+            padding: 0.5rem 1rem;
+            background: var(--gray-200);
+            color: var(--gray-700);
+            font-size: 0.875rem;
+            border-bottom: 1px solid var(--gray-300);
+        }
+
+        .mensagem-content {
+            padding: 1rem;
+            background: white;
+            white-space: pre-line;
+        }
+
+        .user-message .mensagem-header {
+            background: var(--primary-light);
+            color: white;
+        }
+
+        .system-message .mensagem-header {
+            background: var(--gray-200);
+        }
+
+        .actions {
+            margin-top: 1.5rem;
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+        }
+
+        .action-btn {
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            transition: all 0.2s;
+        }
+
+        .print-btn {
+            background: var(--primary);
+            color: white;
+        }
+
+        .print-btn:hover {
+            background: var(--primary-dark);
+        }
+
+        .new-btn {
+            background: var(--gray-200);
+            color: var(--gray-700);
+        }
+
+        .new-btn:hover {
+            background: var(--gray-300);
+            color: var(--gray-900);
+        }
+
+        @media print {
+            .file-upload, .actions {
+                display: none;
+            }
+
+            .container {
+                width: 100%;
+                max-width: 100%;
+                padding: 0;
+            }
+
+            .viewer-card {
+                box-shadow: none;
+                border: none;
+                padding: 0;
+            }
+
+            header, .diagnostico-header {
+                background-color: white !important;
+                color: black !important;
+                padding: 1rem 0;
+                margin-bottom: 1rem;
+            }
+
+            .section-title {
+                background: white;
+                border-bottom: 1px solid #000;
+                padding: 0.75rem 0;
+            }
+
+            .content-section {
+                border: none;
+                margin-bottom: 1.5rem;
+            }
+
+            .section-content {
+                padding: 1rem 0;
+            }
+
+            body {
+                background: white;
+            }
+        }
+
+        /* Para mobile */
+        @media (max-width: 768px) {
+            .meta-info {
+                flex-direction: column;
+                gap: 0.5rem;
+            }
+
+            .status-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .actions {
+                flex-direction: column;
+            }
+        }
     </style>
 </head>
 <body>
+    <header>
+        <div class="container">
+            <h1><i class="fas fa-tractor"></i> GeoCarbonite - Visualizador de Diagnósticos</h1>
+        </div>
+    </header>
+
     <div class="container">
-        <input type="file" accept=".txt" onchange="loadFile(this.files[0])">
-        <div id="output"></div>
+        <div class="viewer-card">
+            <div id="uploadSection" class="file-upload">
+                <i class="fas fa-file-upload"></i>
+                <p>Selecione um arquivo de diagnóstico para visualizar</p>
+                <label class="upload-btn">
+                    <i class="fas fa-folder-open"></i>
+                    <span>Escolher Arquivo</span>
+                    <input type="file" id="fileInput" accept=".txt">
+                </label>
+                <div id="fileInfo"></div>
+            </div>
+
+            <div id="diagnosticoViewer">
+                <div class="diagnostico-header">
+                    <h2><i class="fas fa-clipboard-check"></i> <span id="tituloRelatorio">Relatório Técnico #ID</span></h2>
+                    <div class="meta-info">
+                        <div class="meta-item">
+                            <i class="fas fa-calendar"></i>
+                            <span id="dataRelatorio">00/00/0000</span>
+                        </div>
+                        <div class="meta-item">
+                            <i class="fas fa-clock"></i>
+                            <span id="horaRelatorio">00:00</span>
+                        </div>
+                        <div class="meta-item">
+                            <i class="fas fa-tractor"></i>
+                            <span id="maquinaRelatorio">Máquina: Colheitadeira CH570</span>
+                        </div>
+                        <div class="meta-item">
+                            <i class="fas fa-user-hard-hat"></i>
+                            <span id="tecnicoRelatorio">Técnico: N/A</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="content-section">
+                    <div class="section-title">
+                        <i class="fas fa-exclamation-triangle"></i> Problemas Relatados
+                    </div>
+                    <div class="section-content">
+                        <ul id="problemasList" class="problem-list">
+                            <!-- Problemas serão inseridos aqui -->
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="content-section">
+                    <div class="section-title">
+                        <i class="fas fa-tasks"></i> Status Técnico
+                    </div>
+                    <div class="section-content">
+                        <div id="statusGrid" class="status-grid">
+                            <!-- Status serão inseridos aqui -->
+                        </div>
+                    </div>
+                </div>
+
+                <div class="content-section">
+                    <div class="section-title">
+                        <i class="fas fa-diagnoses"></i> Diagnóstico Final
+                    </div>
+                    <div class="section-content">
+                        <div id="diagnosticoFinal" class="final-diagnosis">
+                            <!-- Diagnóstico final será inserido aqui -->
+                        </div>
+                    </div>
+                </div>
+
+                <div class="content-section">
+                    <div class="section-title">
+                        <i class="fas fa-comments"></i> Histórico de Mensagens
+                    </div>
+                    <div class="section-content">
+                        <div id="mensagensContainer" class="mensagens-container">
+                            <!-- Mensagens serão inseridas aqui -->
+                        </div>
+                    </div>
+                </div>
+
+                <div class="actions">
+                    <button id="printBtn" class="action-btn print-btn">
+                        <i class="fas fa-print"></i>
+                        <span>Imprimir Relatório</span>
+                    </button>
+                    <button id="newFileBtn" class="action-btn new-btn">
+                        <i class="fas fa-file"></i>
+                        <span>Carregar Novo Arquivo</span>
+                    </button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script>
-        function loadFile(file) {
-            if (!file) return;
+        document.addEventListener('DOMContentLoaded', function() {
+            const fileInput = document.getElementById('fileInput');
+            const fileInfo = document.getElementById('fileInfo');
+            const uploadSection = document.getElementById('uploadSection');
+            const diagnosticoViewer = document.getElementById('diagnosticoViewer');
+            const printBtn = document.getElementById('printBtn');
+            const newFileBtn = document.getElementById('newFileBtn');
 
-            const reader = new FileReader();
+            // Event Listeners
+            fileInput.addEventListener('change', handleFileSelect);
+            printBtn.addEventListener('click', handlePrint);
+            newFileBtn.addEventListener('click', resetViewer);
 
-            reader.onload = function(e) {
-                const content = e.target.result;
-                const output = document.getElementById('output');
+            function handleFileSelect(event) {
+                const file = event.target.files[0];
+                if (!file) return;
 
-                // Limpa o output anterior
-                output.innerHTML = '';
+                fileInfo.textContent = `Arquivo selecionado: ${file.name}`;
 
-                try {
-                    // Extrai o ID, Data e Hora
-                    const idMatch = content.match(/ID da Conversa: (\d+)/);
-                    const dataMatch = content.match(/Data: ([^\n]+)/);
-                    const horaMatch = content.match(/Hora: ([^\n]+)/);
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const content = e.target.result;
+                    processarRelatorio(content);
 
-                    const id = idMatch ? idMatch[1] : 'N/A';
-                    const data = dataMatch ? dataMatch[1] : 'N/A';
-                    const hora = horaMatch ? horaMatch[1] : 'N/A';
+                    // Mostrar visualizador e esconder área de upload
+                    uploadSection.style.display = 'none';
+                    diagnosticoViewer.style.display = 'block';
+                };
 
-                    // Adiciona cabeçalho
-                    output.innerHTML += `
-                        <h2>Conversa #${id}</h2>
-                        <p>${data} às ${hora}</p>
-                    `;
+                reader.onerror = function() {
+                    fileInfo.textContent = 'Erro ao ler o arquivo. Tente novamente.';
+                    fileInfo.style.color = 'red';
+                };
 
-                    // Extrai e mostra status técnico
-                    output.innerHTML += '<h3>Status Técnico</h3>';
-                    const statusLines = content.match(/\d+\.\s+[^:]+:\s*(Sim|Não)/g);
-                    if (statusLines) {
-                        statusLines.forEach(line => {
-                            const [status, value] = line.split(':').map(s => s.trim());
-                            const cleanStatus = status.replace(/^\d+\.\s+/, '');
-                            output.innerHTML += `
-                                <div class="status-item">
-                                    <span>${cleanStatus}:</span>
-                                    <span class="${value.toLowerCase()}">${value}</span>
-                                </div>
-                            `;
-                        });
+                reader.readAsText(file);
+            }
+
+            function processarRelatorio(content) {
+                // Extrair metadados
+                const idMatch = content.match(/ID da Conversa: (\d+)/);
+                const dataMatch = content.match(/Data: ([^\n]+)/);
+                const horaMatch = content.match(/Hora: ([^\n]+)/);
+                const maquinaMatch = content.match(/Máquina: ([^\n]+)/);
+                const tecnicoMatch = content.match(/Técnico: ([^\n]+)/);
+
+                // Atualizar cabeçalho
+                document.getElementById('tituloRelatorio').textContent = `Relatório Técnico #${idMatch ? idMatch[1] : 'N/A'}`;
+                document.getElementById('dataRelatorio').textContent = dataMatch ? dataMatch[1] : 'N/A';
+                document.getElementById('horaRelatorio').textContent = horaMatch ? horaMatch[1] : 'N/A';
+                document.getElementById('maquinaRelatorio').textContent = maquinaMatch ? maquinaMatch[1] : 'Colheitadeira CH570';
+                document.getElementById('tecnicoRelatorio').textContent = tecnicoMatch ? `Técnico: ${tecnicoMatch[1]}` : 'Técnico: N/A';
+
+                // Extrair seções
+                extrairProblemasRelatados(content);
+                extrairStatusTecnico(content);
+                extrairDiagnosticoFinal(content);
+                extrairMensagens(content);
+            }
+
+            function extrairProblemasRelatados(content) {
+                const problemasContainer = document.getElementById('problemasList');
+                problemasContainer.innerHTML = '';
+
+                // Buscar seção de problemas relatados
+                const problemasSectionMatch = content.match(/=== PROBLEMAS RELATADOS ===\n([\s\S]*?)(?=\n===|$)/);
+
+                if (problemasSectionMatch) {
+                    const problemasSection = problemasSectionMatch[1].trim();
+
+                    // Extrair cada problema e detalhe
+                    const problemPattern = /•\s+([^\n]+)\n\s+→\s+([^\n]+)/g;
+                    let match;
+
+                    while ((match = problemPattern.exec(problemasSection)) !== null) {
+                        const problema = match[1].trim();
+                        const detalhe = match[2].trim();
+
+                        const li = document.createElement('li');
+                        li.className = 'problem-item';
+                        li.innerHTML = `
+                            ${problema}
+                            <div class="problem-details">${detalhe}</div>
+                        `;
+
+                        problemasContainer.appendChild(li);
                     }
 
-                    // Extrai e mostra mensagens
-                    output.innerHTML += '<h3>Mensagens</h3>';
-                    const messages = content.match(/\[\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2}\][\s\S]+?(?=\[|$)/g);
-                    if (messages) {
-                        messages.forEach(msg => {
-                            const timeMatch = msg.match(/\[(.*?)\]/);
-                            const time = timeMatch ? timeMatch[1] : '';
-                            const content = msg.replace(/\[.*?\]/, '').trim();
-
-                            output.innerHTML += `
-                                <div class="message">
-                                    <div><strong>${time}</strong></div>
-                                    <div>${content}</div>
-                                </div>
-                            `;
-                        });
+                    // Se nenhum problema foi extraído no formato específico
+                    if (problemasContainer.children.length === 0) {
+                        problemasContainer.innerHTML = `<div>${problemasSection}</div>`;
                     }
-
-                } catch (error) {
-                    output.innerHTML = `<p style="color: red;">Erro ao processar arquivo: ${error.message}</p>`;
+                } else {
+                    problemasContainer.innerHTML = '<div>Nenhum problema relatado encontrado no arquivo.</div>';
                 }
-            };
+            }
 
-            reader.readAsText(file);
-        }
+            function extrairStatusTecnico(content) {
+                const statusGrid = document.getElementById('statusGrid');
+                statusGrid.innerHTML = '';
+
+                // Buscar seção de status técnico
+                const statusSectionMatch = content.match(/=== STATUS TÉCNICO ===\n([\s\S]*?)(?=\n===|$)/);
+
+                if (statusSectionMatch) {
+                    const statusSection = statusSectionMatch[1].trim();
+
+                    // Verificar se há itens estruturados de status
+                    const statusItems = statusSection.match(/\d+\.\s+([^:]+):\s*(Sim|Não)/g);
+
+                    if (statusItems && statusItems.length > 0) {
+                        statusItems.forEach(item => {
+                            const [fullMatch, label, value] = item.match(/(\d+\.\s+[^:]+):\s*(Sim|Não)/);
+
+                            const statusItem = document.createElement('div');
+                            statusItem.className = 'status-item';
+                            statusItem.innerHTML = `
+                                <span class="status-label">${label.replace(/^\d+\.\s+/, '')}</span>
+                                <span class="status-value ${value.toLowerCase()}">
+                                    ${value}
+                                    <i class="fas fa-${value === 'Sim' ? 'check' : 'times'}-circle"></i>
+                                </span>
+                            `;
+
+                            statusGrid.appendChild(statusItem);
+                        });
+                    } else {
+                        // Se não houver itens estruturados, mostre o conteúdo bruto
+                        statusGrid.innerHTML = `<div style="grid-column: 1/-1;">${statusSection}</div>`;
+                    }
+                } else {
+                    statusGrid.innerHTML = '<div style="grid-column: 1/-1;">Nenhum status técnico encontrado no arquivo.</div>';
+                }
+            }
+
+            function extrairDiagnosticoFinal(content) {
+                const diagnosticoFinal = document.getElementById('diagnosticoFinal');
+
+                // Buscar seção de diagnóstico final
+                const diagnosticoSectionMatch = content.match(/=== DIAGNÓSTICO FINAL ===\n([\s\S]*?)(?=\n===|$)/);
+
+                if (diagnosticoSectionMatch) {
+                    const diagnosticoSection = diagnosticoSectionMatch[1].trim();
+                    diagnosticoFinal.innerHTML = diagnosticoSection;
+                } else {
+                    diagnosticoFinal.innerHTML = 'Nenhum diagnóstico final encontrado no arquivo.';
+                }
+            }
+
+            function extrairMensagens(content) {
+                const mensagensContainer = document.getElementById('mensagensContainer');
+                mensagensContainer.innerHTML = '';
+
+                // Buscar seção de histórico de mensagens
+                const mensagensSectionMatch = content.match(/=== HISTÓRICO COMPLETO DE MENSAGENS ===\n([\s\S]*?)(?=$)/);
+
+                if (mensagensSectionMatch) {
+                    const mensagensSection = mensagensSectionMatch[1].trim();
+
+                    // Extrair cada bloco de mensagem
+                    const mensagemPattern = /\[([\d\/\s:]+)\]\n(Técnico|Sistema): ([\s\S]*?)(?=\n\[|\n\n\n|$)/g;
+                    let match;
+
+                    while ((match = mensagemPattern.exec(mensagensSection)) !== null) {
+                        const timestamp = match[1].trim();
+                        const role = match[2].trim();
+                        const content = match[3].trim();
+
+                        if (content) {
+                            const mensagemDiv = document.createElement('div');
+                            mensagemDiv.className = `mensagem ${role.toLowerCase()}-message`;
+                            mensagemDiv.innerHTML = `
+                                <div class="mensagem-header">
+                                    <strong>${role}</strong> - ${timestamp}
+                                </div>
+                                <div class="mensagem-content">${content}</div>
+                            `;
+
+                            mensagensContainer.appendChild(mensagemDiv);
+                        }
+                    }
+
+                    // Se nenhuma mensagem foi extraída no formato específico
+                    if (mensagensContainer.children.length === 0 && mensagensSection) {
+                        mensagensContainer.innerHTML = `<div class="mensagem-content">${mensagensSection}</div>`;
+                    }
+                } else {
+                    mensagensContainer.innerHTML = '<div>Nenhum histórico de mensagens encontrado no arquivo.</div>';
+                }
+            }
+
+            function handlePrint() {
+                window.print();
+            }
+
+            function resetViewer() {
+                uploadSection.style.display = 'flex';
+                diagnosticoViewer.style.display = 'none';
+                fileInput.value = '';
+                fileInfo.textContent = '';
+            }
+        });
     </script>
 </body>
 </html>
