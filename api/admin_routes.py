@@ -2,12 +2,9 @@ from flask import Blueprint, render_template, jsonify, session, request, redirec
 from api.database import db, Usuario, Conversa, Mensagem
 import bcrypt
 from api.supabase_client import supabase, get_api_key
-from werkzeug.utils import secure_filename
 from datetime import datetime, timedelta
 from collections import defaultdict
 from openai import OpenAI
-import time
-import os
 
 admin_routes_bp = Blueprint('admin_routes', __name__)
 
