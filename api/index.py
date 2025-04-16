@@ -3,7 +3,9 @@ from openai import OpenAI
 import secrets
 from api.admin_routes import admin_routes_bp
 from api.supabase_client import supabase, verificar_senha, get_api_key
+from api.rag_routes import rag_routes_bp
 from datetime import datetime
+import logging
 import re
 from difflib import SequenceMatcher
 import uuid
@@ -12,12 +14,12 @@ app = Flask(__name__, static_folder='../static', template_folder='../templates')
 app.secret_key = secrets.token_hex(16)
 
 #logging.basicConfig(level=logging.INFO)
-#logger = logging.getLogger(__name__)
 
 app.instance_path = '/tmp'
 
 # Registra o Blueprint de administração
 app.register_blueprint(admin_routes_bp, url_prefix='/admin')  # Rotas administrativas
+app.register_blueprint(rag_routes_bp)
 
 def format_large_number(value):
     """Formata números grandes com separadores de milhar"""
@@ -632,6 +634,16 @@ def index():
             historico=historico,
             selected_assistant_id=assistant_id
         )
+    elif assistant_id == 'asst_LqpNV5KZlig3wHiaY7RaAofw':
+        # Este é o assistente RAG
+        return render_template(
+            'rag_troubleshooting.html',
+            usuario_nome=usuario_nome,
+            is_admin=is_admin,
+            assistants=assistants,
+            historico=historico,
+            selected_assistant_id=assistant_id
+        )
     else:
         # Usa o template padrão para todos os outros assistentes
         return render_template(
@@ -799,25 +811,162 @@ def set_api_key():
 
 # Função para enviar mensagem
 @app.route('/chat', methods=['POST'])
+def chat_with_rag():
+    """
+    Modified chat endpoint to include RAG context.
+    """
+    if 'usuario_id' not in session:
+        return jsonify({'error': 'Usuário não autenticado'}), 403
+
+    request_id = str(uuid.uuid4())[:8]
+    usuario_id = session['usuario_id']
+
+    # Verificar limites de uso
+    pode_continuar, mensagem = verificar_limites_usuario(usuario_id)
+    if not pode_continuar:
+        return jsonify({'error': mensagem}), 429
+
+    # Buscar a chave API
+    api_key = get_api_key(usuario_id)
+    if not api_key:
+        return jsonify({'error': 'Chave API não configurada para este usuário.'}), 400
+
+    client = OpenAI(api_key=api_key)
+    data = request.get_json()
+
+    assistant_id = data.get('assistant_id')
+    user_message = data.get('message')
+    conversa_id = data.get('conversa_id')
+    technical_context = data.get('technical_context')
+    is_retry = data.get('is_retry', False)
+
+    if not assistant_id or not user_message:
+        return jsonify({'error': 'Parâmetros inválidos'}), 400
+
+    try:
+        nova_conversa = False
+        if not conversa_id:
+            thread_id = create_thread(client)
+            if not thread_id:
+                return jsonify({'error': 'Erro ao criar uma nova thread.'}), 500
+
+            # Add technical context if provided
+            if technical_context:
+                client.beta.threads.messages.create(
+                    thread_id=thread_id,
+                    role="user",
+                    content=f"CONTEXTO TÉCNICO:\n{technical_context}"
+                )
+
+            # Add RAG context if this is the RAG assistant
+            if assistant_id == "asst_LqpNV5KZlig3wHiaY7RaAofw":
+                try:
+                    from api.llama_cloud_integration import llama_rag
+
+                    rag_context = llama_rag.retrieve_context(user_message)
+                    if rag_context:
+                        rag_content = "CONTEXTO DE CONHECIMENTO RAG:\n"
+                        for item in rag_context:
+                            rag_content += f"---\n{item['text']}\n"
+
+                        client.beta.threads.messages.create(
+                            thread_id=thread_id,
+                            role="user",
+                            content=rag_content
+                        )
+                except Exception as rag_err:
+                    print(f"rag_err{rag_err}")
+
+
+            nova_conversa_response = supabase.table("conversas").insert({
+                "id_usuario": usuario_id,
+                "data_inicio": datetime.now().isoformat(),
+                "assistant_id": assistant_id,
+                "thread_id": thread_id,
+                "id_modelo": None
+            }).execute()
+
+            conversa_id = nova_conversa_response.data[0]["id"]
+            nova_conversa = True
+        else:
+            conversa_response = supabase.table("conversas").select("*").eq("id", conversa_id).execute()
+            conversa = conversa_response.data[0] if conversa_response.data else None
+
+            if not conversa:
+                return jsonify({'error': 'Conversa não encontrada.'}), 404
+
+            thread_id = conversa.get("thread_id")
+            if not thread_id:
+                thread_id = create_thread(client)
+                if not thread_id:
+                    return jsonify({'error': 'Erro ao criar uma nova thread.'}), 500
+                supabase.table("conversas").update({"thread_id": thread_id}).eq("id", conversa_id).execute()
+
+        # Process message with RAG context if needed
+        final_message = user_message
+
+        # Only add RAG if this is the RAG assistant
+        if assistant_id == "asst_LqpNV5KZlig3wHiaY7RaAofw":
+            try:
+                from api.llama_cloud_integration import llama_rag
+
+                rag_context = llama_rag.retrieve_context(user_message)
+
+                if rag_context:
+                    # Add RAG context as system instructions rather than a separate message
+                    # This keeps the context for this specific message but doesn't clutter the thread
+                    rag_content = "IMPORTANTE - USE ESTE CONHECIMENTO PARA RESPONDER:\n"
+                    for item in rag_context:
+                        rag_content += f"---\n{item['text']}\n"
+
+                    # Add the knowledge to the user message
+                    final_message = f"{rag_content}\n\nPERGUNTA DO USUÁRIO:\n{user_message}"
+
+            except Exception as rag_err:
+                print(f"rag_err{rag_err}")
+
+
+        # Send the message
+        success = send_message(client, thread_id, final_message)
+        if not success:
+            return jsonify({'error': 'Erro ao enviar a mensagem.'}), 500
+
+        # Run the thread
+        run_response = run_thread(client, thread_id, assistant_id)
+        if not run_response:
+            return jsonify({'error': 'Erro ao executar o tópico.'}), 500
+
+        return jsonify({
+            'status': 'pending',
+            'run_id': run_response.id,
+            'thread_id': thread_id,
+            'conversa_id': conversa_id,
+            'message': user_message,
+            'is_retry': is_retry
+        })
+
+    except Exception as e:
+
+        return jsonify({'error': f'Erro ao processar o chat: {str(e)}'}), 500
 def chat():
     if 'usuario_id' not in session:
         return jsonify({'error': 'Usuário não autenticado'}), 403
 
     request_id = str(uuid.uuid4())[:8]  # ID único para rastrear essa requisição em logs
-    #logger.info(f"[{request_id}] Nova requisição de chat recebida")
+
 
     usuario_id = session['usuario_id']
 
     # Verificar limites de uso
     pode_continuar, mensagem = verificar_limites_usuario(usuario_id)
     if not pode_continuar:
-        #logger.warning(f"[{request_id}] Limite de uso excedido: {mensagem}")
+
         return jsonify({'error': mensagem}), 429
 
     # Buscar a chave API
     api_key = get_api_key(usuario_id)
     if not api_key:
-        #logger.error(f"[{request_id}] Chave API não encontrada para usuário ID: {usuario_id}")
+
         return jsonify({'error': 'Chave API não configurada para este usuário.'}), 400
 
     client = OpenAI(api_key=api_key)
@@ -830,17 +979,17 @@ def chat():
     is_retry = data.get('is_retry', False)  # Flag para identificar tentativas de recuperação
 
     if not assistant_id or not user_message:
-        #logger.error(f"[{request_id}] Parâmetros inválidos: {data}")
+
         return jsonify({'error': 'Parâmetros inválidos'}), 400
 
     try:
         nova_conversa = False
         if not conversa_id:
-            #logger.info(f"[{request_id}] Iniciando nova conversa com assistant_id: {assistant_id}")
+
 
             thread_id = create_thread(client)
             if not thread_id:
-                #logger.error(f"[{request_id}] Erro ao criar thread")
+
                 return jsonify({'error': 'Erro ao criar uma nova thread.'}), 500
 
             if technical_context:
@@ -860,32 +1009,32 @@ def chat():
 
             conversa_id = nova_conversa_response.data[0]["id"]
             nova_conversa = True
-            #logger.info(f"[{request_id}] Nova conversa criada com ID: {conversa_id}")
+
         else:
-            #logger.info(f"[{request_id}] Continuando conversa existente ID: {conversa_id}")
+
 
             conversa_response = supabase.table("conversas").select("*").eq("id", conversa_id).execute()
             conversa = conversa_response.data[0] if conversa_response.data else None
 
             if not conversa:
-                #logger.error(f"[{request_id}] Conversa ID {conversa_id} não encontrada")
+
                 return jsonify({'error': 'Conversa não encontrada.'}), 404
 
             thread_id = conversa.get("thread_id")
             if not thread_id:
                 thread_id = create_thread(client)
                 if not thread_id:
-                    #logger.error(f"[{request_id}] Erro ao criar thread para conversa existente")
+
                     return jsonify({'error': 'Erro ao criar uma nova thread.'}), 500
                 supabase.table("conversas").update({"thread_id": thread_id}).eq("id", conversa_id).execute()
-                #logger.info(f"[{request_id}] Nova thread {thread_id} criada para conversa existente {conversa_id}")
+
 
         # Processar mensagem com controle de repetição
         final_message = user_message
 
         # Se for uma tentativa de recuperação, adicione instruções especiais
         if is_retry:
-            #logger.info(f"[{request_id}] Processando tentativa de recuperação para thread {thread_id}")
+
             recovery_instructions = """
             INSTRUÇÃO ESPECIAL DE RECUPERAÇÃO:
             Houve um timeout na resposta anterior. 
@@ -904,19 +1053,19 @@ def chat():
         if technical_context and not nova_conversa and not is_retry:
             final_message = f"CONTEXTO TÉCNICO:\n{technical_context}\n\nPERGUNTA DO USUÁRIO:\n{final_message}"
 
-        #logger.info(f"[{request_id}] Enviando mensagem para thread {thread_id}")
+
         success = send_message(client, thread_id, final_message)
         if not success:
-            #logger.error(f"[{request_id}] Falha ao enviar mensagem para thread {thread_id}")
+
             return jsonify({'error': 'Erro ao enviar a mensagem.'}), 500
 
         # Adicionar timeout maior para runs em tentativas de recuperação
         run_response = run_thread(client, thread_id, assistant_id)
         if not run_response:
-            #logger.error(f"[{request_id}] Falha ao executar thread {thread_id}")
+
             return jsonify({'error': 'Erro ao executar o tópico.'}), 500
 
-        #logger.info(f"[{request_id}] Thread executada com sucesso: {run_response.id}")
+
         return jsonify({
             'status': 'pending',
             'run_id': run_response.id,
@@ -927,7 +1076,7 @@ def chat():
         })
 
     except Exception as e:
-        #logger.error(f"[{request_id}] Erro ao processar chat: {str(e)}")
+
         return jsonify({'error': f'Erro ao processar o chat: {str(e)}'}), 500
 
 # Adicionar nova rota para check_run
@@ -1005,7 +1154,7 @@ def check_run():
 
         # Se o status for "failed" ou "expired", indicar claramente no retorno
         if run.status in ['failed', 'expired', 'cancelled']:
-            #logger.warning(f"Run {run_id} terminou com status: {run.status}")
+
             return jsonify({
                 'status': 'failed',
                 'error': f'A execução foi interrompida com status: {run.status}'
@@ -1014,7 +1163,7 @@ def check_run():
         return jsonify({'status': run.status})
 
     except Exception as e:
-        #logger.error(f"Erro ao verificar status do run {run_id}: {e}")
+
         return jsonify({'status': 'failed', 'error': str(e)})
 
 @app.route('/conversa/<int:conversa_id>')
@@ -1145,6 +1294,27 @@ def save_feedback():
     except Exception as e:
         print(f"Erro ao salvar feedback: {e}")
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/rag_assistant')
+def rag_assistant():
+    if 'usuario_id' not in session:
+        return redirect(url_for('login'))
+
+    usuario_id = session['usuario_id']
+    usuario_nome = session.get('usuario_nome', 'Usuário')
+    is_admin = session.get('is_admin', False)
+
+    # Set the RAG assistant ID
+    assistant_id = "asst_LqpNV5KZlig3wHiaY7RaAofw"
+
+    return render_template(
+        'rag_troubleshooting.html',
+        usuario_nome=usuario_nome,
+        is_admin=is_admin,
+        selected_assistant_id=assistant_id
+    )
+
 
 @app.route('/logout')
 def logout():

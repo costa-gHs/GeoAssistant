@@ -1,0 +1,887 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GeoCarbonite - RAG Assistant</title>
+
+    <!-- CSS Principal -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='base.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='chat_styles.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='component_styles.css') }}">
+
+    <!-- Bibliotecas Externas CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/styles/github.min.css">
+
+    <!-- Scripts Essenciais Sem Defer -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@2.4.0/dist/purify.min.js"></script>
+
+    <!-- Highlight.js com Inicialização Atrasada -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/highlight.min.js"></script>
+    <script>hljs.initHighlightingOnLoad();</script>
+
+    <style>
+        /* RAG Context Panel Styles */
+        .rag-context-panel {
+            position: fixed;
+            right: -450px;
+            top: 64px;
+            height: calc(100vh - 64px);
+            width: 450px;
+            background: #fff;
+            box-shadow: -5px 0 15px rgba(0,0,0,0.1);
+            z-index: 950;
+            overflow-y: auto;
+            transition: right 0.3s ease-in-out;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .rag-context-panel.open {
+            right: 0;
+        }
+
+        .rag-context-header {
+            background: #2c5282;
+            color: white;
+            padding: 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 2;
+        }
+
+        .rag-context-header h3 {
+            font-size: 1.1rem;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .rag-context-toggle {
+            position: fixed;
+            right: 20px;
+            bottom: 90px;
+            width: 50px;
+            height: 50px;
+            background: #2c5282;
+            border-radius: 50%;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            z-index: 960;
+            font-size: 1.2rem;
+            transition: all 0.2s ease;
+        }
+
+        .rag-context-toggle:hover {
+            transform: scale(1.05);
+            background: #3a6db0;
+        }
+
+        .rag-context-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1rem;
+        }
+
+        .rag-source-item {
+            margin-bottom: 1.5rem;
+            padding: 1rem;
+            background: #f8fafc;
+            border-radius: 8px;
+            border-left: 4px solid #2c5282;
+            font-size: 0.95rem;
+        }
+
+        .rag-source-item h4 {
+            margin-bottom: 0.5rem;
+            color: #4a5568;
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .rag-source-item p {
+            line-height: 1.6;
+            color: #2d3748;
+        }
+
+        .rag-meta {
+            margin-top: 0.5rem;
+            font-size: 0.8rem;
+            color: #718096;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .score-badge {
+            padding: 2px 6px;
+            background: #ebf8ff;
+            color: #2b6cb0;
+            border-radius: 4px;
+            font-weight: 600;
+        }
+
+        .chat-area.with-rag-panel {
+            padding-right: 450px;
+        }
+
+        .empty-context {
+            padding: 2rem;
+            text-align: center;
+            color: #a0aec0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1rem;
+            height: 100%;
+            justify-content: center;
+        }
+
+        .empty-context i {
+            font-size: 3rem;
+            opacity: 0.5;
+        }
+
+        @media (max-width: 1024px) {
+            .rag-context-panel {
+                width: 350px;
+            }
+
+            .chat-area.with-rag-panel {
+                padding-right: 0;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .rag-context-panel {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="chatContainer" class="main-container">
+        <header class="chat-header">
+            <div class="header-content">
+                <div class="brand">
+                    <i class="fas fa-robot"></i>
+                    <span>GeoCarbonite RAG Assistant</span>
+                    <div class="status-indicator"></div>
+                </div>
+            </div>
+            <nav class="nav-links">
+                <a href="{{ url_for('home') }}">Home</a>
+                {% if session['is_admin'] %}
+                    <a href="{{ url_for('admin_routes.dashboard') }}" class="admin-link">Admin</a>
+                {% endif %}
+                <a href="{{ url_for('logout') }}">Logout</a>
+            </nav>
+        </header>
+
+        <div class="content-grid">
+            <!-- Painel de RAG -->
+            <aside class="systems-panel">
+                <h3><i class="fas fa-lightbulb"></i> Insights</h3>
+                <div class="system-card">
+                    <div class="card-header">
+                        <i class="fas fa-brain"></i>
+                        <h4>RAG Troubleshooting</h4>
+                    </div>
+                    <div class="component-description">
+                        Este assistente utiliza RAG (Retrieval-Augmented Generation) para fornecer diagnósticos
+                        precisos baseados na sua base de conhecimento especializada.
+                    </div>
+                    <div class="component-actions">
+                        <button id="toggleRagButton" class="change-component-btn">
+                            <i class="fas fa-info-circle"></i> Visualizar Fontes de Conhecimento
+                        </button>
+                    </div>
+                </div>
+
+                <div class="related-components">
+                    <h3><i class="fas fa-link"></i> Áreas de Conhecimento</h3>
+                    <div class="related-list">
+                        <div class="related-component-item">
+                            <i class="fas fa-cog"></i>
+                            <span>Manutenção Preventiva</span>
+                        </div>
+                        <div class="related-component-item">
+                            <i class="fas fa-exclamation-triangle"></i>
+                            <span>Diagnóstico de Falhas</span>
+                        </div>
+                        <div class="related-component-item">
+                            <i class="fas fa-tools"></i>
+                            <span>Procedimentos de Reparo</span>
+                        </div>
+                        <div class="related-component-item">
+                            <i class="fas fa-clipboard-list"></i>
+                            <span>Checklist de Inspeção</span>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- Área de Chat -->
+            <main class="chat-area">
+                <div id="chat-window" class="chat-messages"></div>
+
+                <div class="chat-input">
+                    <input type="text" id="user-input" placeholder="Descreva seu problema ou faça uma pergunta...">
+                    <button id="send-button" class="btn-primary">
+                        <i class="fas fa-paper-plane"></i>
+                    </button>
+                    <button id="downloadButton" class="btn-primary">
+                        <i class="fas fa-download"></i>
+                    </button>
+                </div>
+            </main>
+        </div>
+
+        <!-- RAG Context Panel -->
+        <div id="ragContextPanel" class="rag-context-panel">
+            <div class="rag-context-header">
+                <h3><i class="fas fa-database"></i> Fontes de Conhecimento</h3>
+                <button id="closeRagPanel" aria-label="Fechar painel">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div id="ragContextContent" class="rag-context-content">
+                <div class="empty-context">
+                    <i class="fas fa-search"></i>
+                    <p>Envie uma mensagem para ver as fontes de conhecimento relevantes.</p>
+                </div>
+            </div>
+        </div>
+
+        <button id="ragContextToggle" class="rag-context-toggle" title="Mostrar fontes de conhecimento">
+            <i class="fas fa-database"></i>
+        </button>
+    </div>
+
+    <script>
+        // Configuração do Marked
+        marked.setOptions({
+            highlight: (code, lang) => hljs.highlightAuto(code).value,
+            breaks: true,
+            gfm: true
+        });
+
+        // Funções auxiliares
+        const formatTimestamp = () => new Date().toLocaleTimeString('pt-BR', {
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+
+        // RAG Context Panel Toggle
+        document.addEventListener('DOMContentLoaded', function() {
+            const ragContextPanel = document.getElementById('ragContextPanel');
+            const ragContextToggle = document.getElementById('ragContextToggle');
+            const closeRagPanel = document.getElementById('closeRagPanel');
+            const toggleRagButton = document.getElementById('toggleRagButton');
+            const chatArea = document.querySelector('.chat-area');
+
+            // Toggle RAG panel
+            function toggleRagPanel() {
+                ragContextPanel.classList.toggle('open');
+
+                // Adjust chat area on larger screens
+                if (window.innerWidth > 1024) {
+                    if (ragContextPanel.classList.contains('open')) {
+                        chatArea.classList.add('with-rag-panel');
+                    } else {
+                        chatArea.classList.remove('with-rag-panel');
+                    }
+                }
+            }
+
+            ragContextToggle.addEventListener('click', toggleRagPanel);
+            closeRagPanel.addEventListener('click', toggleRagPanel);
+            toggleRagButton.addEventListener('click', toggleRagPanel);
+
+            // Store the assistant ID
+            sessionStorage.setItem('selected_assistant_id', 'asst_LqpNV5KZlig3wHiaY7RaAofw');
+
+            // Check if this assistant is RAG-enabled
+            checkRagAssistant();
+        });
+
+            async function checkRagAssistant(retries = 3) {
+                try {
+                    const assistantId = sessionStorage.getItem('selected_assistant_id') || 'asst_LqpNV5KZlig3wHiaY7RaAofw';
+                    console.log(`Checking if assistant ${assistantId} is RAG-enabled (retries left: ${retries})`);
+
+                    const response = await fetch(`/api/rag/check_assistant?assistant_id=${assistantId}`);
+                    console.log(`RAG check response status: ${response.status}`);
+
+                    if (!response.ok) {
+                        if (retries > 0) {
+                            console.log(`Retrying RAG check in 2 seconds... (${retries} retries left)`);
+                            setTimeout(() => checkRagAssistant(retries - 1), 2000);
+                            return;
+                        }
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+
+                    const data = await response.json();
+                    console.log('RAG Status:', data);
+
+                    if (data.is_rag_enabled) {
+                        console.log('RAG functionality is enabled for this assistant');
+                        document.getElementById('ragContextToggle').style.display = 'flex';
+
+                        // Auto-open the panel for demonstration
+                        if (data.rag_status && !data.rag_status.enabled) {
+                            console.log('RAG is configured but disabled (likely missing API key)');
+                            const ragContextPanel = document.getElementById('ragContextPanel');
+                            ragContextPanel.classList.add('open');
+
+                            // Add warning to content
+                            const contentEl = document.getElementById('ragContextContent');
+                            contentEl.innerHTML = `
+                                <div class="rag-source-item" style="border-left-color: #e53e3e;">
+                                    <h4><i class="fas fa-exclamation-triangle" style="color: #e53e3e;"></i> RAG Integration Issue</h4>
+                                    <p>The RAG integration is configured but disabled. This is likely because:</p>
+                                    <ul style="margin-top: 10px; margin-left: 20px;">
+                                        <li>The LLAMA_CLOUD_API_KEY environment variable is not set</li>
+                                        <li>The llama_index package might not be installed</li>
+                                        <li>There might be errors in the LlamaCloud integration</li>
+                                    </ul>
+                                    <p style="margin-top: 10px;">Check server logs for more details.</p>
+                                </div>
+                            `;
+                        }
+                    } else {
+                        console.log('RAG functionality is not enabled for this assistant');
+                        document.getElementById('ragContextToggle').style.display = 'none';
+                    }
+                } catch (error) {
+                    console.error('Error checking RAG assistant:', error);
+                    if (retries > 0) {
+                        console.log(`Retrying RAG check in 2 seconds... (${retries} retries left)`);
+                        setTimeout(() => checkRagAssistant(retries - 1), 2000);
+                    }
+                }
+            }
+
+            function testRagContext() {
+                const testQuery = "Como resolver problemas com o fusível queimado?";
+                console.log(`Testing RAG context with query: ${testQuery}`);
+                fetchRagContext(testQuery);
+            }
+
+                    // Function to fetch RAG context
+            async function fetchRagContext(message) {
+                console.log(`Fetching RAG context for message: ${message.substring(0, 50)}...`);
+
+                try {
+                    const assistantId = sessionStorage.getItem('selected_assistant_id');
+                    console.log(`Using assistant ID: ${assistantId}`);
+
+                    const response = await fetch('/api/rag/context', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            query: message,
+                            assistant_id: assistantId
+                        })
+                    });
+
+                    console.log(`RAG context API response status: ${response.status}`);
+
+                    if (!response.ok) {
+                        // If the API returns an error, still try to parse the response for more info
+                        const errorData = await response.json().catch(() => null);
+                        console.error('Error from RAG context API:', errorData || response.statusText);
+
+                        // Show error in RAG panel
+                        updateRagContextPanel([{
+                            id: 0,
+                            text: `Error fetching knowledge context: ${response.status} ${response.statusText}`,
+                            score: null,
+                            source: 'Error'
+                        }]);
+                        return;
+                    }
+
+                    const data = await response.json();
+                    console.log(`RAG context response success: ${data.success}`);
+
+                    if (data.success) {
+                        console.log(`Retrieved ${data.context.length} context items`);
+                        updateRagContextPanel(data.context);
+                    } else {
+                        console.error('Error fetching RAG context:', data.error);
+                        updateRagContextPanel([{
+                            id: 0,
+                            text: `Error: ${data.error || 'Unknown error occurred'}`,
+                            score: null,
+                            source: 'Error'
+                        }]);
+                    }
+                } catch (error) {
+                    console.error('Exception in fetchRagContext:', error);
+                    updateRagContextPanel([{
+                        id: 0,
+                        text: `Exception: ${error.message || 'Unknown error occurred'}`,
+                        score: null,
+                        source: 'Error'
+                    }]);
+                }
+            }
+
+        // Function to update the RAG context panel
+        function updateRagContextPanel(context) {
+            const contentEl = document.getElementById('ragContextContent');
+
+            if (!context || context.length === 0) {
+                contentEl.innerHTML = `
+                    <div class="empty-context">
+                        <i class="fas fa-search"></i>
+                        <p>Nenhuma fonte de conhecimento relevante encontrada para esta consulta.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            let html = '';
+
+            context.forEach((item, index) => {
+                const score = item.score ? (item.score * 100).toFixed(1) + '%' : 'N/A';
+                const source = item.source || 'Base de Conhecimento';
+
+                html += `
+                    <div class="rag-source-item">
+                        <h4><i class="fas fa-file-alt"></i> Fonte #${index + 1}</h4>
+                        <p>${item.text}</p>
+                        <div class="rag-meta">
+                            <span><i class="fas fa-bookmark"></i> ${source}</span>
+                            <span class="score-badge">Relevância: ${score}</span>
+                        </div>
+                    </div>
+                `;
+            });
+
+            contentEl.innerHTML = html;
+        }
+
+        // Sistema principal de chat
+        {% if 'api_key' in session %}
+        const chatWindow = document.getElementById('chat-window');
+        const userInput = document.getElementById('user-input');
+        const sendButton = document.getElementById('send-button');
+
+        async function downloadConversation() {
+            const conversaId = sessionStorage.getItem('conversa_id');
+            if (!conversaId) {
+                console.error('ID da conversa não encontrado');
+                alert('Não foi possível identificar a conversa atual. Verifique se você iniciou um diagnóstico.');
+                return;
+            }
+
+            try {
+                // Adicionar indicador visual de download
+                const downloadButton = document.getElementById('downloadButton');
+                const originalIcon = downloadButton.innerHTML;
+                downloadButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+                downloadButton.disabled = true;
+
+                // Obter os dados completos da conversa
+                const response = await fetch(`/conversa/${conversaId}`);
+                const data = await response.json();
+
+                if (!data.mensagens || data.mensagens.length === 0) {
+                    throw new Error('Nenhuma mensagem encontrada na conversa');
+                }
+
+                // Metadados do relatório
+                const hoje = new Date();
+                const dataFormatada = hoje.toLocaleDateString('pt-BR');
+                const horaFormatada = hoje.toLocaleTimeString('pt-BR');
+                const nomeTecnico = sessionStorage.getItem('usuario_nome') || 'Técnico';
+
+                // Estrutura do relatório
+                let content = `=== RELATÓRIO DE DIAGNÓSTICO RAG ===\n\n`;
+                content += `Data: ${dataFormatada}\n`;
+                content += `Hora: ${horaFormatada}\n`;
+                content += `ID da Conversa: ${conversaId}\n\n`;
+
+                // Adicionar mensagens
+                content += '=== HISTÓRICO DE CONSULTAS ===\n\n';
+                data.mensagens.forEach(msg => {
+                    content += `[${msg.data_hora_envio}]\n`;
+                    content += `Usuário: ${msg.usuario}\n`;
+                    content += `Assistente: ${msg.gpt}\n\n`;
+                });
+
+                // Criar e baixar o arquivo
+                const nomeArquivo = `diagnostico_rag_${hoje.toISOString().slice(0,10)}_${conversaId}.txt`;
+                const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+                const url = window.URL.createObjectURL(blob);
+
+                // Criar link de download e disparar
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = nomeArquivo;
+                document.body.appendChild(a);
+                a.click();
+
+                // Limpar recursos
+                setTimeout(() => {
+                    document.body.removeChild(a);
+                    window.URL.revokeObjectURL(url);
+                    downloadButton.innerHTML = originalIcon;
+                    downloadButton.disabled = false;
+                }, 100);
+
+                return true;
+            } catch (error) {
+                console.error('Erro ao baixar conversa:', error);
+                alert(`Erro ao baixar a conversa: ${error.message}. Por favor, tente novamente.`);
+
+                // Restaurar botão
+                const downloadButton = document.getElementById('downloadButton');
+                downloadButton.innerHTML = '<i class="fas fa-download"></i>';
+                downloadButton.disabled = false;
+
+                return false;
+            }
+        }
+
+        // Função para criar indicador de digitação
+        function createTypingIndicator() {
+            const indicator = document.createElement('div');
+            indicator.className = 'typing-indicator';
+
+            const avatar = document.createElement('div');
+            avatar.className = 'typing-avatar';
+            avatar.innerHTML = '<i class="fas fa-robot"></i>';
+
+            const dots = document.createElement('div');
+            dots.className = 'typing-dots';
+
+            for (let i = 0; i < 3; i++) {
+                const dot = document.createElement('div');
+                dot.className = 'typing-dot';
+                dots.appendChild(dot);
+            }
+
+            const text = document.createElement('div');
+            text.className = 'typing-text';
+            text.textContent = 'Consultando conhecimento...';
+
+            indicator.appendChild(avatar);
+            indicator.appendChild(dots);
+            indicator.appendChild(text);
+
+            return indicator;
+        }
+
+        function createMessage(content, type, messageId) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `chat-message ${type}-message`;
+            messageDiv.dataset.messageId = messageId;
+
+            const messageContent = document.createElement('div');
+            messageContent.className = 'message-content';
+
+            if (type === 'assistant') {
+                messageContent.innerHTML = DOMPurify.sanitize(marked.parse(content));
+
+                // Adicionar sistema de feedback
+                const feedbackDiv = document.createElement('div');
+                feedbackDiv.className = 'message-feedback';
+                feedbackDiv.innerHTML = `
+                    <button class="feedback-btn like" title="Resposta útil">
+                        <i class="fas fa-thumbs-up"></i>
+                        <span>Útil</span>
+                    </button>
+                    <button class="feedback-btn dislike" title="Resposta não útil">
+                        <i class="fas fa-thumbs-down"></i>
+                        <span>Não útil</span>
+                    </button>
+                `;
+
+                // Eventos de feedback
+                feedbackDiv.querySelector('.like').addEventListener('click', () =>
+                    handleFeedback(true, messageId));
+                feedbackDiv.querySelector('.dislike').addEventListener('click', () =>
+                    handleFeedback(false, messageId));
+
+                messageDiv.append(messageContent, feedbackDiv);
+            } else {
+                messageContent.textContent = content;
+                messageDiv.appendChild(messageContent);
+            }
+
+            // Timestamp
+            const timestamp = document.createElement('div');
+            timestamp.className = 'message-timestamp';
+            timestamp.textContent = formatTimestamp();
+            messageDiv.appendChild(timestamp);
+
+            return messageDiv;
+        }
+
+        // Sistema de feedback
+        function handleFeedback(isLike, messageId) {
+            fetch('/feedback', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    mensagem_id: messageId,
+                    tipo: isLike
+                })
+            })
+            .then(() => {
+                // Mostrar mensagem de feedback
+                const toast = document.createElement('div');
+                toast.className = `toast ${isLike ? 'success' : 'error'}`;
+                toast.textContent = isLike ? 'Obrigado pelo feedback positivo!' : 'Feedback negativo registrado';
+                document.body.appendChild(toast);
+
+                // Remover após alguns segundos
+                setTimeout(() => {
+                    toast.remove();
+                }, 3000);
+            })
+            .catch(error => console.error('Erro ao enviar feedback:', error));
+        }
+
+        // Envio de mensagens
+        function sendMessage() {
+            const message = userInput.value.trim();
+            if (!message) return;
+
+            // Obter IDs do sessionStorage
+            const assistantId = sessionStorage.getItem('selected_assistant_id');
+            let threadId = sessionStorage.getItem('thread_id');
+            let conversaId = sessionStorage.getItem('conversa_id');
+
+            // Adicionar mensagem do usuário
+            chatWindow.appendChild(createMessage(message, 'user'));
+            userInput.value = '';
+
+            // Adicionar indicador de digitação
+            const typingIndicator = createTypingIndicator();
+            chatWindow.appendChild(typingIndicator);
+            chatWindow.scrollTop = chatWindow.scrollHeight;
+
+            // Fetch RAG context in parallel
+            fetchRagContext(message);
+
+            // Check if we need to create a new conversation
+            if (!threadId || !conversaId) {
+                // Criar nova conversa
+                fetch('/nova_conversa', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        assistant_id: assistantId
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // Guardar IDs da nova conversa
+                        sessionStorage.setItem('conversa_id', data.conversa_id);
+                        sessionStorage.setItem('thread_id', data.thread_id);
+
+                        // Enviar mensagem na nova conversa
+                        sendMessageToThread(message, data.thread_id, data.conversa_id, assistantId);
+                    } else {
+                        console.error('Erro ao criar conversa:', data.message);
+                        typingIndicator.remove();
+                        alert('Erro ao iniciar conversa. Por favor, tente novamente.');
+                    }
+                })
+                .catch(error => {
+                    console.error('Erro ao criar conversa:', error);
+                    typingIndicator.remove();
+                    alert('Erro ao iniciar conversa. Por favor, tente novamente.');
+                });
+            } else {
+                // Usar conversa existente
+                sendMessageToThread(message, threadId, conversaId, assistantId);
+            }
+        }
+
+        function sendMessageToThread(message, threadId, conversaId, assistantId) {
+            // Enviar para o backend
+            fetch('/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    assistant_id: assistantId,
+                    message: message,
+                    thread_id: threadId,
+                    conversa_id: conversaId
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'pending') {
+                    pollRunStatus(data.thread_id, data.run_id, data.conversa_id, message);
+                }
+            })
+            .catch(error => {
+                console.error('Erro ao enviar mensagem:', error);
+                document.querySelector('.typing-indicator')?.remove();
+                alert('Erro ao enviar mensagem. Tente novamente.');
+            });
+        }
+
+        // Verificação de status
+        function pollRunStatus(threadId, runId, conversaId, message) {
+            const typingIndicator = document.querySelector('.typing-indicator');
+            let pollingCount = 0;
+            const MAX_POLLING_ATTEMPTS = 90; // 90 segundos (com 1 segundo de intervalo)
+
+            const checkStatus = () => {
+                pollingCount++;
+
+                // Verificar se atingimos o limite de tempo
+                if (pollingCount >= MAX_POLLING_ATTEMPTS) {
+                    if (typingIndicator) {
+                        typingIndicator.remove();
+                    }
+                    showErrorMessage("A resposta está demorando mais que o esperado. Por favor, tente novamente.");
+                    return;
+                }
+
+                fetch(`/check_run?thread_id=${threadId}&run_id=${runId}&conversa_id=${conversaId}&message=${encodeURIComponent(message)}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.status === 'completed') {
+                            // Remove o indicador de digitação
+                            if (typingIndicator) {
+                                typingIndicator.remove();
+                            }
+
+                            // Adiciona a resposta
+                            chatWindow.appendChild(createMessage(data.response, 'assistant', data.mensagem_id));
+                            chatWindow.scrollTop = chatWindow.scrollHeight;
+                        } else if (data.status === 'failed') {
+                            // Remove o indicador de digitação em caso de falha
+                            if (typingIndicator) {
+                                typingIndicator.remove();
+                            }
+                            showErrorMessage("Ocorreu um erro ao processar sua mensagem. Por favor, tente novamente.");
+                        } else {
+                            // Continua o polling
+                            setTimeout(checkStatus, 1000);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Erro no polling:', error);
+                        // Continuar tentando mesmo com erro
+                        setTimeout(checkStatus, 1000);
+                    });
+            };
+
+            checkStatus();
+        }
+
+        function showErrorMessage(message) {
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'chat-message system-message error-message';
+
+            const messageContent = document.createElement('div');
+            messageContent.className = 'message-content';
+            messageContent.innerHTML = `<i class="fas fa-exclamation-circle"></i> ${message}`;
+
+            errorDiv.appendChild(messageContent);
+            chatWindow.appendChild(errorDiv);
+            chatWindow.scrollTop = chatWindow.scrollHeight;
+        }
+
+        // Event listeners
+        sendButton.addEventListener('click', sendMessage);
+        userInput.addEventListener('keypress', e => e.key === 'Enter' && sendMessage());
+
+        // Download button
+        document.getElementById('downloadButton').addEventListener('click', downloadConversation);
+
+        // Initialize: Check if there's an existing conversation to load
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log("Setting up RAG integration");
+
+            // Make sure RAG assistant ID is set
+            sessionStorage.setItem('selected_assistant_id', 'asst_LqpNV5KZlig3wHiaY7RaAofw');
+
+            // Check if this assistant is RAG-enabled (with retries)
+            checkRagAssistant(3);
+
+            // Add a debug button
+            const debugButton = document.createElement('button');
+            debugButton.id = 'ragDebugButton';
+            debugButton.innerHTML = '<i class="fas fa-bug"></i>';
+            debugButton.title = 'Test RAG Context';
+            debugButton.style.cssText = `
+                position: fixed;
+                right: 20px;
+                bottom: 150px;
+                width: 50px;
+                height: 50px;
+                background: #e53e3e;
+                border-radius: 50%;
+                color: white;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                cursor: pointer;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+                z-index: 960;
+                font-size: 1.2rem;
+                transition: all 0.2s ease;
+                border: none;
+            `;
+
+            debugButton.addEventListener('click', testRagContext);
+            document.body.appendChild(debugButton);
+
+            // Override the sendMessage function to ensure RAG context is fetched
+            const originalSendMessage = window.sendMessage;
+            if (typeof originalSendMessage === 'function') {
+                window.sendMessage = function() {
+                    const message = document.getElementById('user-input').value.trim();
+                    if (message) {
+                        console.log("Overridden sendMessage called, fetching RAG context");
+                        fetchRagContext(message);
+                    }
+                    return originalSendMessage.apply(this, arguments);
+                };
+                console.log("Successfully overridden sendMessage function");
+            } else {
+                console.warn("Couldn't find sendMessage function to override");
+            }
+
+            // Also initialize RAG context panel
+            const contentEl = document.getElementById('ragContextContent');
+            contentEl.innerHTML = `
+                <div class="empty-context">
+                    <i class="fas fa-database"></i>
+                    <p>Envie uma mensagem para ver as fontes de conhecimento relevantes.</p>
+                    <p style="font-size: 0.9rem; margin-top: 10px; color: #4a5568;">
+                        <i class="fas fa-info-circle"></i> Se nenhuma fonte aparecer, verifique se a integração RAG está configurada corretamente.
+                    </p>
+                </div>
+            `;
+        });
+        {% endif %}
+    </script>
+</body>
+</html>
