@@ -385,6 +385,13 @@
             async function fetchRagContext(message) {
                 console.log(`Fetching RAG context for message: ${message.substring(0, 50)}...`);
 
+                // Try to get from cache first
+                const cachedContext = getCachedRagContext(message);
+                if (cachedContext) {
+                    updateRagContextPanel(cachedContext);
+                    return cachedContext;
+                }
+
                 try {
                     const assistantId = sessionStorage.getItem('selected_assistant_id');
                     console.log(`Using assistant ID: ${assistantId}`);
@@ -414,7 +421,7 @@
                             score: null,
                             source: 'Error'
                         }]);
-                        return;
+                        return [];
                     }
 
                     const data = await response.json();
@@ -422,7 +429,13 @@
 
                     if (data.success) {
                         console.log(`Retrieved ${data.context.length} context items`);
+
+                        // Store in localStorage
+                        storeRagContext(message, data.context);
+
+                        // Update panel
                         updateRagContextPanel(data.context);
+                        return data.context;
                     } else {
                         console.error('Error fetching RAG context:', data.error);
                         updateRagContextPanel([{
@@ -431,6 +444,7 @@
                             score: null,
                             source: 'Error'
                         }]);
+                        return [];
                     }
                 } catch (error) {
                     console.error('Exception in fetchRagContext:', error);
@@ -440,8 +454,10 @@
                         score: null,
                         source: 'Error'
                     }]);
+                    return [];
                 }
             }
+
 
         // Function to update the RAG context panel
         function updateRagContextPanel(context) {
@@ -808,6 +824,66 @@
             chatWindow.scrollTop = chatWindow.scrollHeight;
         }
 
+        function getCachedRagContext(query) {
+            try {
+                const ragCache = localStorage.getItem('ragContextCache');
+                if (!ragCache) return null;
+
+                const cache = JSON.parse(ragCache);
+                if (!cache[query]) return null;
+
+                // Check if cache is still valid (less than 30 minutes old)
+                const cacheTime = cache[query].timestamp;
+                const now = Date.now();
+                if (now - cacheTime > 30 * 60 * 1000) {
+                    console.log('Cache expired for query:', query.substring(0, 30));
+                    return null;
+                }
+
+                console.log(`Using cached RAG context for query: "${query.substring(0, 30)}..."`);
+                return cache[query].context;
+            } catch (error) {
+                console.error('Error retrieving RAG context from localStorage:', error);
+                return null;
+            }
+        }
+
+        function storeRagContext(query, context) {
+            try {
+                // Create a cache object if it doesn't exist
+                let ragCache = localStorage.getItem('ragContextCache');
+                if (!ragCache) {
+                    ragCache = {};
+                } else {
+                    ragCache = JSON.parse(ragCache);
+                }
+
+                // Add the new context to the cache with a timestamp
+                ragCache[query] = {
+                    context: context,
+                    timestamp: Date.now()
+                };
+
+                // Limit cache size by removing oldest entries if we have more than 10
+                const queries = Object.keys(ragCache);
+                if (queries.length > 10) {
+                    // Sort by timestamp (oldest first)
+                    queries.sort((a, b) => ragCache[a].timestamp - ragCache[b].timestamp);
+
+                    // Remove oldest
+                    for (let i = 0; i < queries.length - 10; i++) {
+                        delete ragCache[queries[i]];
+                    }
+                }
+
+                // Save back to localStorage
+                localStorage.setItem('ragContextCache', JSON.stringify(ragCache));
+                console.log(`Stored RAG context for query "${query.substring(0, 30)}..." in localStorage`);
+            } catch (error) {
+                console.error('Error storing RAG context in localStorage:', error);
+            }
+        }
+
         // Event listeners
         sendButton.addEventListener('click', sendMessage);
         userInput.addEventListener('keypress', e => e.key === 'Enter' && sendMessage());
@@ -817,7 +893,7 @@
 
         // Initialize: Check if there's an existing conversation to load
         document.addEventListener('DOMContentLoaded', function() {
-            console.log("Setting up RAG integration");
+            console.log("Setting up RAG integration with localStorage caching");
 
             // Make sure RAG assistant ID is set
             sessionStorage.setItem('selected_assistant_id', 'asst_LqpNV5KZlig3wHiaY7RaAofw');
@@ -880,6 +956,13 @@
                     </p>
                 </div>
             `;
+        });
+
+        // Add event listener for localStorage changes (in case multiple tabs are open)
+        window.addEventListener('storage', function(e) {
+            if (e.key === 'ragContextCache') {
+                console.log('RAG context cache updated in another tab');
+            }
         });
         {% endif %}
     </script>

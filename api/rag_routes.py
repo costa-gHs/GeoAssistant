@@ -40,6 +40,7 @@ except ImportError as e:
 def get_rag_context():
     """
     Endpoint to retrieve RAG context for a given query.
+    IMPORTANT: This implementation doesn't store context in session to avoid cookie size limits.
     """
     logger.info("RAG Context API endpoint called")
 
@@ -66,15 +67,10 @@ def get_rag_context():
             logger.warning("Empty query provided for RAG context")
             return jsonify({'success': False, 'error': 'Query is required'}), 400
 
-        # Check if we already have this query cached
-        if 'rag_context' in session and query in session['rag_context']:
-            logger.info("Using cached RAG context")
-            context = session['rag_context'][query]
-        else:
-            # Retrieve new context
-            logger.info(f"Retrieving new RAG context from LlamaCloud for query: {query[:50]}...")
-            context = llama_rag.retrieve_context(query)
-            logger.info(f"Retrieved {len(context)} context items")
+        # Retrieve context directly - don't store in session
+        logger.info(f"Retrieving RAG context from LlamaCloud for query: {query[:50]}...")
+        context = llama_rag.retrieve_context(query)
+        logger.info(f"Retrieved {len(context)} context items")
 
         return jsonify({
             'success': True,

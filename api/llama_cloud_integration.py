@@ -1,5 +1,4 @@
 import os
-from flask import session
 import logging
 
 # Set up logging
@@ -11,6 +10,7 @@ class LlamaCloudRAG:
     """
     Wrapper class for LlamaCloud RAG integration.
     Handles retrieval of context from LlamaCloud API.
+    IMPORTANT: This version doesn't store context in session to avoid cookie size issues.
     """
 
     def __init__(self):
@@ -68,7 +68,7 @@ class LlamaCloudRAG:
         logger.info(f"Retrieve context called for query: {query[:50]}...")
 
         if not self.enabled:
-            logger.warning("RAG functionality disabled - returning empty context")
+            logger.warning("RAG functionality disabled - returning debug context")
             return self._generate_debug_context(query)
 
         try:
@@ -80,20 +80,19 @@ class LlamaCloudRAG:
             # Format nodes for display
             formatted_nodes = []
             for i, node in enumerate(nodes):
+                # Limit text length to 500 chars max to avoid cookie size issues
+                text = node.text[:500] + ("..." if len(node.text) > 500 else "") if hasattr(node,
+                                                                                            'text') else "No text available"
+
                 formatted_node = {
                     'id': i,
-                    'text': node.text,
+                    'text': text,
                     'score': node.score if hasattr(node, 'score') else None,
                     'source': node.metadata.get('source', 'Unknown') if hasattr(node, 'metadata') else 'Unknown'
                 }
                 formatted_nodes.append(formatted_node)
                 logger.debug(f"Node {i}: score={formatted_node['score']}, source={formatted_node['source']}")
 
-            # Cache in session for re-use
-            if 'rag_context' not in session:
-                session['rag_context'] = {}
-
-            session['rag_context'][query] = formatted_nodes
             return formatted_nodes
 
         except Exception as e:
@@ -119,11 +118,6 @@ class LlamaCloudRAG:
             }
         ]
 
-        # Cache even debug context
-        if 'rag_context' not in session:
-            session['rag_context'] = {}
-
-        session['rag_context'][query] = example_context
         return example_context
 
     def answer_query(self, query):
