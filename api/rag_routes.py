@@ -40,16 +40,30 @@ except ImportError as e:
 def get_rag_context():
     """
     Endpoint to retrieve RAG context for a given query.
-    IMPORTANT: This implementation doesn't store context in session to avoid cookie size limits.
+    IMPROVED: More robust authentication handling.
     """
     logger.info("RAG Context API endpoint called")
 
+    # Improved authentication check with detailed logging
     if 'usuario_id' not in session:
-        logger.warning("Authentication required for RAG context")
-        return jsonify({'success': False, 'error': 'Authentication required'}), 403
+        logger.warning(f"Authentication required for RAG context. Session keys: {list(session.keys())}")
+
+        # Return a special status code that the client can handle
+        return jsonify({
+            'success': False,
+            'error': 'Authentication required',
+            'error_code': 'AUTH_REQUIRED'
+        }), 401
 
     try:
+        usuario_id = session.get('usuario_id')
+        logger.info(f"RAG context requested by user ID: {usuario_id}")
+
         data = request.get_json()
+        if not data:
+            logger.warning("No JSON data in request")
+            return jsonify({'success': False, 'error': 'No data provided'}), 400
+
         query = data.get('query', '')
         assistant_id = data.get('assistant_id', '')
 
@@ -90,6 +104,7 @@ def check_rag_assistant():
     assistant_id = request.args.get('assistant_id', '')
     logger.info(f"Checking if assistant {assistant_id} is RAG-enabled")
 
+    # No authentication required for this endpoint
     result = {
         'is_rag_enabled': assistant_id == RAG_ASSISTANT_ID,
         'rag_status': {
@@ -100,6 +115,21 @@ def check_rag_assistant():
 
     logger.info(f"RAG check result: {result}")
     return jsonify(result)
+
+
+# Additional debug endpoint to check session status
+@rag_routes_bp.route('/api/rag/session_debug', methods=['GET'])
+def session_debug():
+    """Debug endpoint to check session status"""
+    session_data = {
+        'has_session': bool(session),
+        'session_keys': list(session.keys()) if session else [],
+        'is_authenticated': 'usuario_id' in session,
+        'session_id': session.get('usuario_id', None)
+    }
+
+    logger.info(f"Session debug info: {session_data}")
+    return jsonify(session_data)
 
 
 # Log that the blueprint is defined

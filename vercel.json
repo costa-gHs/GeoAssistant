@@ -5,7 +5,8 @@
       "src": "api/index.py",
       "use": "@vercel/python",
       "config": {
-        "runtime": "python3.10"
+        "runtime": "python3.9",
+        "maxLambdaSize": "15mb"
       }
     },
     { "src": "static/**", "use": "@vercel/static" },
@@ -14,5 +15,24 @@
   "routes": [
     { "src": "/static/(.*)", "dest": "/static/$1" },
     { "src": "/(.*)", "dest": "/api/index.py" }
+  ],
+  "env": {
+    "PYTHONUNBUFFERED": "1",
+    "VERCEL_ENV": "production"
+  },
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "s-maxage=0"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
+        }
+      ]
+    }
   ]
 }

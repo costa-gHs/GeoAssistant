@@ -9,6 +9,8 @@ import logging
 import re
 from difflib import SequenceMatcher
 import uuid
+from datetime import timedelta
+import os
 
 app = Flask(__name__, static_folder='../static', template_folder='../templates')
 app.secret_key = secrets.token_hex(16)
@@ -20,6 +22,56 @@ app.instance_path = '/tmp'
 # Registra o Blueprint de administração
 app.register_blueprint(admin_routes_bp, url_prefix='/admin')  # Rotas administrativas
 app.register_blueprint(rag_routes_bp)
+
+app.config['SESSION_TYPE'] = 'filesystem'  # You can also use 'redis' if available
+app.config['SESSION_PERMANENT'] = True
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=12)  # Extend session lifetime
+app.config['SESSION_USE_SIGNER'] = True
+app.config['SESSION_COOKIE_SECURE'] = False  # Set to True in production with HTTPS
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+
+# 3. Configure specific Vercel-friendly settings
+if os.environ.get('VERCEL_ENV'):
+    # Vercel-specific adjustments
+    print("Running in Vercel environment, applying special configurations")
+    app.config['SESSION_TYPE'] = 'null'  # Vercel's serverless functions can't use filesystem
+    app.config['SESSION_USE_SIGNER'] = False  # Reduce cookie size
+
+    # Make sure we preserve session integrity as much as possible
+    app.config['SESSION_COOKIE_SECURE'] = True
+    app.config['SESSION_COOKIE_HTTPONLY'] = True
+    app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+
+    # Increase memory limit if possible
+    if 'MEMORY_LIMIT' in os.environ:
+        print(f"Memory limit set to: {os.environ['MEMORY_LIMIT']}")
+
+
+# 4. Detect and log session issues
+@app.before_request
+def log_session_info():
+    if 'usuario_id' in session:
+        print(f"Active session for user ID: {session['usuario_id']}")
+    else:
+        print(f"No authenticated user in session. Session keys: {list(session.keys())}")
+
+
+# 5. Add session debug endpoint
+@app.route('/debug/session')
+def debug_session():
+    return jsonify({
+        'session_active': bool(session),
+        'session_keys': list(session.keys()),
+        'usuario_id': session.get('usuario_id', None),
+        'usuario_nome': session.get('usuario_nome', None),
+        'session_cookie_config': {
+            'secure': app.config.get('SESSION_COOKIE_SECURE'),
+            'httponly': app.config.get('SESSION_COOKIE_HTTPONLY'),
+            'samesite': app.config.get('SESSION_COOKIE_SAMESITE'),
+            'session_type': app.config.get('SESSION_TYPE')
+        }
+    })
 
 def format_large_number(value):
     """Formata números grandes com separadores de milhar"""

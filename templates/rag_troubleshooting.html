@@ -317,147 +317,218 @@
             checkRagAssistant();
         });
 
-            async function checkRagAssistant(retries = 3) {
-                try {
-                    const assistantId = sessionStorage.getItem('selected_assistant_id') || 'asst_LqpNV5KZlig3wHiaY7RaAofw';
-                    console.log(`Checking if assistant ${assistantId} is RAG-enabled (retries left: ${retries})`);
+        async function checkRagAssistant(retries = 3) {
+            try {
+                const assistantId = sessionStorage.getItem('selected_assistant_id') || 'asst_LqpNV5KZlig3wHiaY7RaAofw';
+                console.log(`Checking if assistant ${assistantId} is RAG-enabled (retries left: ${retries})`);
 
-                    const response = await fetch(`/api/rag/check_assistant?assistant_id=${assistantId}`);
-                    console.log(`RAG check response status: ${response.status}`);
+                const response = await fetch(`/api/rag/check_assistant?assistant_id=${assistantId}`, {
+                    credentials: 'same-origin' // Important for cookies/session
+                });
+                console.log(`RAG check response status: ${response.status}`);
 
-                    if (!response.ok) {
-                        if (retries > 0) {
-                            console.log(`Retrying RAG check in 2 seconds... (${retries} retries left)`);
-                            setTimeout(() => checkRagAssistant(retries - 1), 2000);
-                            return;
-                        }
-                        throw new Error(`HTTP error! status: ${response.status}`);
-                    }
-
-                    const data = await response.json();
-                    console.log('RAG Status:', data);
-
-                    if (data.is_rag_enabled) {
-                        console.log('RAG functionality is enabled for this assistant');
-                        document.getElementById('ragContextToggle').style.display = 'flex';
-
-                        // Auto-open the panel for demonstration
-                        if (data.rag_status && !data.rag_status.enabled) {
-                            console.log('RAG is configured but disabled (likely missing API key)');
-                            const ragContextPanel = document.getElementById('ragContextPanel');
-                            ragContextPanel.classList.add('open');
-
-                            // Add warning to content
-                            const contentEl = document.getElementById('ragContextContent');
-                            contentEl.innerHTML = `
-                                <div class="rag-source-item" style="border-left-color: #e53e3e;">
-                                    <h4><i class="fas fa-exclamation-triangle" style="color: #e53e3e;"></i> RAG Integration Issue</h4>
-                                    <p>The RAG integration is configured but disabled. This is likely because:</p>
-                                    <ul style="margin-top: 10px; margin-left: 20px;">
-                                        <li>The LLAMA_CLOUD_API_KEY environment variable is not set</li>
-                                        <li>The llama_index package might not be installed</li>
-                                        <li>There might be errors in the LlamaCloud integration</li>
-                                    </ul>
-                                    <p style="margin-top: 10px;">Check server logs for more details.</p>
-                                </div>
-                            `;
-                        }
-                    } else {
-                        console.log('RAG functionality is not enabled for this assistant');
-                        document.getElementById('ragContextToggle').style.display = 'none';
-                    }
-                } catch (error) {
-                    console.error('Error checking RAG assistant:', error);
+                if (!response.ok) {
                     if (retries > 0) {
                         console.log(`Retrying RAG check in 2 seconds... (${retries} retries left)`);
                         setTimeout(() => checkRagAssistant(retries - 1), 2000);
+                        return;
                     }
-                }
-            }
-
-            function testRagContext() {
-                const testQuery = "Como resolver problemas com o fusível queimado?";
-                console.log(`Testing RAG context with query: ${testQuery}`);
-                fetchRagContext(testQuery);
-            }
-
-                    // Function to fetch RAG context
-            async function fetchRagContext(message) {
-                console.log(`Fetching RAG context for message: ${message.substring(0, 50)}...`);
-
-                // Try to get from cache first
-                const cachedContext = getCachedRagContext(message);
-                if (cachedContext) {
-                    updateRagContextPanel(cachedContext);
-                    return cachedContext;
+                    throw new Error(`HTTP error! status: ${response.status}`);
                 }
 
-                try {
-                    const assistantId = sessionStorage.getItem('selected_assistant_id');
-                    console.log(`Using assistant ID: ${assistantId}`);
+                const data = await response.json();
+                console.log('RAG Status:', data);
 
-                    const response = await fetch('/api/rag/context', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            query: message,
-                            assistant_id: assistantId
-                        })
-                    });
+                if (data.is_rag_enabled) {
+                    console.log('RAG functionality is enabled for this assistant');
+                    document.getElementById('ragContextToggle').style.display = 'flex';
 
-                    console.log(`RAG context API response status: ${response.status}`);
+                    // Check session status
+                    const isAuthenticated = await checkSessionStatus();
+                    if (!isAuthenticated) {
+                        console.warn('User not authenticated, showing warning');
+                        const ragContextPanel = document.getElementById('ragContextPanel');
+                        ragContextPanel.classList.add('open');
 
-                    if (!response.ok) {
-                        // If the API returns an error, still try to parse the response for more info
-                        const errorData = await response.json().catch(() => null);
-                        console.error('Error from RAG context API:', errorData || response.statusText);
-
-                        // Show error in RAG panel
-                        updateRagContextPanel([{
-                            id: 0,
-                            text: `Error fetching knowledge context: ${response.status} ${response.statusText}`,
-                            score: null,
-                            source: 'Error'
-                        }]);
-                        return [];
+                        // Add warning to content
+                        const contentEl = document.getElementById('ragContextContent');
+                        contentEl.innerHTML = `
+                            <div class="rag-source-item" style="border-left-color: #e53e3e;">
+                                <h4><i class="fas fa-exclamation-triangle" style="color: #e53e3e;"></i> Problema de Autenticação</h4>
+                                <p>Sua sessão parece ter expirado ou não está autenticada corretamente.</p>
+                                <p style="margin-top: 10px;">Tente atualizar a página e fazer login novamente.</p>
+                            </div>
+                        `;
                     }
 
-                    const data = await response.json();
-                    console.log(`RAG context response success: ${data.success}`);
+                    // Auto-open the panel if there are configuration issues
+                    if (data.rag_status && !data.rag_status.enabled) {
+                        console.log('RAG is configured but disabled (likely missing API key)');
+                        const ragContextPanel = document.getElementById('ragContextPanel');
+                        ragContextPanel.classList.add('open');
 
-                    if (data.success) {
-                        console.log(`Retrieved ${data.context.length} context items`);
+                        // Add warning to content
+                        const contentEl = document.getElementById('ragContextContent');
+                        contentEl.innerHTML = `
+                            <div class="rag-source-item" style="border-left-color: #e53e3e;">
+                                <h4><i class="fas fa-exclamation-triangle" style="color: #e53e3e;"></i> Configuração Incompleta</h4>
+                                <p>A integração RAG está configurada mas desativada. Isto pode ser devido a:</p>
+                                <ul style="margin-top: 10px; margin-left: 20px;">
+                                    <li>A variável de ambiente LLAMA_CLOUD_API_KEY não está definida</li>
+                                    <li>O pacote llama_index pode não estar instalado</li>
+                                    <li>Pode haver erros na integração com LlamaCloud</li>
+                                </ul>
+                                <p style="margin-top: 10px;">Verifique os logs do servidor para mais detalhes.</p>
+                            </div>
+                        `;
+                    }
+                } else {
+                    console.log('RAG functionality is not enabled for this assistant');
+                    document.getElementById('ragContextToggle').style.display = 'none';
+                }
+            } catch (error) {
+                console.error('Error checking RAG assistant:', error);
+                if (retries > 0) {
+                    console.log(`Retrying RAG check in 2 seconds... (${retries} retries left)`);
+                    setTimeout(() => checkRagAssistant(retries - 1), 2000);
+                }
+            }
+        }
 
-                        // Store in localStorage
-                        storeRagContext(message, data.context);
+        function testRagContext() {
+            const testQuery = "Como resolver problemas com o fusível queimado?";
+            console.log(`Testing RAG context with query: ${testQuery}`);
+            fetchRagContext(testQuery);
+        }
 
-                        // Update panel
-                        updateRagContextPanel(data.context);
-                        return data.context;
-                    } else {
-                        console.error('Error fetching RAG context:', data.error);
-                        updateRagContextPanel([{
-                            id: 0,
-                            text: `Error: ${data.error || 'Unknown error occurred'}`,
-                            score: null,
-                            source: 'Error'
-                        }]);
+                // Function to fetch RAG context
+        async function fetchRagContext(message) {
+            console.log(`Fetching RAG context for message: ${message.substring(0, 50)}...`);
+
+            // Try to get from cache first
+            const cachedContext = getCachedRagContext(message);
+            if (cachedContext) {
+                updateRagContextPanel(cachedContext);
+                return cachedContext;
+            }
+
+            try {
+                // Set a timeout for the fetch operation (15 seconds)
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+                const assistantId = sessionStorage.getItem('selected_assistant_id');
+                console.log(`Using assistant ID: ${assistantId}`);
+
+                const response = await fetch('/api/rag/context', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest' // Add this to help with CSRF protection
+                    },
+                    body: JSON.stringify({
+                        query: message,
+                        assistant_id: assistantId
+                    }),
+                    signal: controller.signal,
+                    credentials: 'same-origin' // Important for cookies/session
+                });
+
+                clearTimeout(timeoutId); // Clear the timeout
+
+                console.log(`RAG context API response status: ${response.status}`);
+
+                if (response.status === 401) {
+                    // Handle authentication error
+                    const errorData = await response.json();
+                    console.error('Authentication error from RAG context API:', errorData);
+
+                    if (errorData.error_code === 'AUTH_REQUIRED') {
+                        handleAuthError();
                         return [];
                     }
-                } catch (error) {
-                    console.error('Exception in fetchRagContext:', error);
+                }
+
+                if (!response.ok) {
+                    // If the API returns an error, still try to parse the response for more info
+                    const errorData = await response.json().catch(() => null);
+                    console.error('Error from RAG context API:', errorData || response.statusText);
+
+                    // Show error in RAG panel
                     updateRagContextPanel([{
                         id: 0,
-                        text: `Exception: ${error.message || 'Unknown error occurred'}`,
+                        text: `Erro ao buscar contexto: ${response.status} ${response.statusText}`,
                         score: null,
-                        source: 'Error'
+                        source: 'Erro'
                     }]);
                     return [];
                 }
+
+                const data = await response.json();
+                console.log(`RAG context response success: ${data.success}`);
+
+                if (data.success) {
+                    console.log(`Retrieved ${data.context.length} context items`);
+
+                    // Store in localStorage
+                    storeRagContext(message, data.context);
+
+                    // Update panel
+                    updateRagContextPanel(data.context);
+                    return data.context;
+                } else {
+                    console.error('Error fetching RAG context:', data.error);
+                    updateRagContextPanel([{
+                        id: 0,
+                        text: `Erro: ${data.error || 'Erro desconhecido ocorreu'}`,
+                        score: null,
+                        source: 'Erro'
+                    }]);
+                    return [];
+                }
+            } catch (error) {
+                if (error.name === 'AbortError') {
+                    console.error('Fetch operation timed out');
+                    updateRagContextPanel([{
+                        id: 0,
+                        text: `Tempo limite excedido ao buscar contexto. A operação foi cancelada após 15 segundos.`,
+                        score: null,
+                        source: 'Erro de Timeout'
+                    }]);
+                } else {
+                    console.error('Exception in fetchRagContext:', error);
+                    updateRagContextPanel([{
+                        id: 0,
+                        text: `Exceção: ${error.message || 'Erro desconhecido ocorreu'}`,
+                        score: null,
+                        source: 'Erro'
+                    }]);
+                }
+                return [];
+            }
+        }
+
+        let pendingFetchOperations = {};
+
+        // Throttled version of fetchRagContext
+        function throttledFetchRagContext(message) {
+            // If we're already fetching this exact query, don't start another fetch
+            if (pendingFetchOperations[message]) {
+                console.log(`Already fetching context for: ${message.substring(0, 30)}...`);
+                return pendingFetchOperations[message];
             }
 
+            console.log(`Starting throttled fetch for: ${message.substring(0, 30)}...`);
+            const fetchPromise = fetchRagContext(message);
+            pendingFetchOperations[message] = fetchPromise;
+
+            // Remove from pending operations when done
+            fetchPromise.finally(() => {
+                delete pendingFetchOperations[message];
+            });
+
+            return fetchPromise;
+        }
 
         // Function to update the RAG context panel
         function updateRagContextPanel(context) {
@@ -824,6 +895,71 @@
             chatWindow.scrollTop = chatWindow.scrollHeight;
         }
 
+        async function checkSessionStatus() {
+            try {
+                const response = await fetch('/api/rag/session_debug');
+                if (!response.ok) {
+                    console.error('Error checking session status:', response.status);
+                    return false;
+                }
+
+                const data = await response.json();
+                console.log('Session status:', data);
+
+                return data.is_authenticated;
+            } catch (error) {
+                console.error('Error checking session status:', error);
+                return false;
+            }
+        }
+
+        function handleAuthError() {
+            console.warn("Session authentication error detected");
+
+            // Update the RAG panel with authentication error
+            updateRagContextPanel([{
+                id: 0,
+                text: "Sessão expirada. Por favor, atualize a página e faça login novamente.",
+                score: null,
+                source: 'Erro de Autenticação'
+            }]);
+
+            // Show a notification to the user
+            const notification = document.createElement('div');
+            notification.style.cssText = `
+                position: fixed;
+                top: 20px;
+                left: 50%;
+                transform: translateX(-50%);
+                background: #f56565;
+                color: white;
+                padding: 1rem 1.5rem;
+                border-radius: 4px;
+                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+                z-index: 1000;
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+                font-size: 0.9rem;
+            `;
+            notification.innerHTML = `
+                <i class="fas fa-exclamation-triangle"></i>
+                <span>Sessão expirada. Clique para atualizar e fazer login novamente.</span>
+            `;
+            document.body.appendChild(notification);
+
+            // Make the notification clickable to reload the page
+            notification.style.cursor = 'pointer';
+            notification.addEventListener('click', () => {
+                window.location.reload();
+            });
+
+            // Auto-remove after 10 seconds
+            setTimeout(() => {
+                notification.remove();
+            }, 10000);
+        }
+
         function getCachedRagContext(query) {
             try {
                 const ragCache = localStorage.getItem('ragContextCache');
@@ -893,7 +1029,7 @@
 
         // Initialize: Check if there's an existing conversation to load
         document.addEventListener('DOMContentLoaded', function() {
-            console.log("Setting up RAG integration with localStorage caching");
+            console.log("Setting up RAG integration with improved authentication handling");
 
             // Make sure RAG assistant ID is set
             sessionStorage.setItem('selected_assistant_id', 'asst_LqpNV5KZlig3wHiaY7RaAofw');
@@ -929,14 +1065,45 @@
             debugButton.addEventListener('click', testRagContext);
             document.body.appendChild(debugButton);
 
-            // Override the sendMessage function to ensure RAG context is fetched
+            // Add session debug button
+            const sessionDebugButton = document.createElement('button');
+            sessionDebugButton.id = 'sessionDebugButton';
+            sessionDebugButton.innerHTML = '<i class="fas fa-key"></i>';
+            sessionDebugButton.title = 'Check Session Status';
+            sessionDebugButton.style.cssText = `
+                position: fixed;
+                right: 20px;
+                bottom: 210px;
+                width: 50px;
+                height: 50px;
+                background: #3182ce;
+                border-radius: 50%;
+                color: white;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                cursor: pointer;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+                z-index: 960;
+                font-size: 1.2rem;
+                transition: all 0.2s ease;
+                border: none;
+            `;
+
+            sessionDebugButton.addEventListener('click', async () => {
+                const isAuthenticated = await checkSessionStatus();
+                alert(`Sessão autenticada: ${isAuthenticated ? 'SIM' : 'NÃO'}`);
+            });
+            document.body.appendChild(sessionDebugButton);
+
+            // Override the sendMessage function to ensure RAG context is fetched with throttling
             const originalSendMessage = window.sendMessage;
             if (typeof originalSendMessage === 'function') {
                 window.sendMessage = function() {
                     const message = document.getElementById('user-input').value.trim();
                     if (message) {
-                        console.log("Overridden sendMessage called, fetching RAG context");
-                        fetchRagContext(message);
+                        console.log("Overridden sendMessage called, fetching RAG context with throttling");
+                        throttledFetchRagContext(message);
                     }
                     return originalSendMessage.apply(this, arguments);
                 };
@@ -956,6 +1123,14 @@
                     </p>
                 </div>
             `;
+
+            // Periodically check session status
+            setInterval(async () => {
+                const isAuthenticated = await checkSessionStatus();
+                if (!isAuthenticated) {
+                    console.warn("Session authentication check failed");
+                }
+            }, 30000); // Check every 30 seconds
         });
 
         // Add event listener for localStorage changes (in case multiple tabs are open)
@@ -964,6 +1139,49 @@
                 console.log('RAG context cache updated in another tab');
             }
         });
+
+        // Default implementation of updateRagContextPanel in case it doesn't exist
+        if (typeof updateRagContextPanel !== 'function') {
+            window.updateRagContextPanel = function(context) {
+                console.log("Default updateRagContextPanel called:", context);
+
+                const contentEl = document.getElementById('ragContextContent');
+                if (!contentEl) {
+                    console.error("RAG context panel content element not found");
+                    return;
+                }
+
+                if (!context || context.length === 0) {
+                    contentEl.innerHTML = `
+                        <div class="empty-context">
+                            <i class="fas fa-search"></i>
+                            <p>Nenhuma fonte de conhecimento relevante encontrada para esta consulta.</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                let html = '';
+
+                context.forEach((item, index) => {
+                    const score = item.score ? (item.score * 100).toFixed(1) + '%' : 'N/A';
+                    const source = item.source || 'Base de Conhecimento';
+
+                    html += `
+                        <div class="rag-source-item">
+                            <h4><i class="fas fa-file-alt"></i> Fonte #${index + 1}</h4>
+                            <p>${item.text}</p>
+                            <div class="rag-meta">
+                                <span><i class="fas fa-bookmark"></i> ${source}</span>
+                                <span class="score-badge">Relevância: ${score}</span>
+                            </div>
+                        </div>
+                    `;
+                });
+
+                contentEl.innerHTML = html;
+            };
+        }
         {% endif %}
     </script>
 </body>
