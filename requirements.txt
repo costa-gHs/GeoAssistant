@@ -10,3 +10,4 @@ asyncpg
 tiktoken
 werkzeug
 llama-index-indices-managed-llama-cloud
+gunicorn

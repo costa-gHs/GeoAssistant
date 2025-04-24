@@ -4,6 +4,7 @@ import secrets
 from api.admin_routes import admin_routes_bp
 from api.supabase_client import supabase, verificar_senha, get_api_key
 from api.rag_routes import rag_routes_bp
+from flask.sessions import SecureCookieSessionInterface
 from datetime import datetime
 import logging
 import re
@@ -11,11 +12,15 @@ from difflib import SequenceMatcher
 import uuid
 from datetime import timedelta
 import os
+import json
+import base64
+import hmac
+import hashlib
+#logging.basicConfig(level=logging.INFO)
 
 app = Flask(__name__, static_folder='../static', template_folder='../templates')
-app.secret_key = secrets.token_hex(16)
-
-#logging.basicConfig(level=logging.INFO)
+app.secret_key = os.getenv('FLASK_SECRET_KEY', secrets.token_hex(16))
+SECRET_AUTH_KEY = os.getenv('FLASK_SECRET_KEY', secrets.token_hex(16))
 
 app.instance_path = '/tmp'
 
@@ -23,13 +28,13 @@ app.instance_path = '/tmp'
 app.register_blueprint(admin_routes_bp, url_prefix='/admin')  # Rotas administrativas
 app.register_blueprint(rag_routes_bp)
 
-app.config['SESSION_TYPE'] = 'filesystem'  # You can also use 'redis' if available
-app.config['SESSION_PERMANENT'] = True
-app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=12)  # Extend session lifetime
-app.config['SESSION_USE_SIGNER'] = True
-app.config['SESSION_COOKIE_SECURE'] = False  # Set to True in production with HTTPS
-app.config['SESSION_COOKIE_HTTPONLY'] = True
+# Configuração básica de sessão que funciona em serverless
+app.config['SESSION_TYPE'] = 'null'  # Não use filesystem em ambiente serverless
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=12)  # Estender tempo de vida
+app.config['SESSION_COOKIE_SECURE'] = False  # Definir como True em produção HTTPS
+app.config['SESSION_COOKIE_HTTPONLY'] = True  # Sempre mantenha True para segurança
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_USE_SIGNER'] = True
 
 # 3. Configure specific Vercel-friendly settings
 if os.environ.get('VERCEL_ENV'):
@@ -47,6 +52,80 @@ if os.environ.get('VERCEL_ENV'):
     if 'MEMORY_LIMIT' in os.environ:
         print(f"Memory limit set to: {os.environ['MEMORY_LIMIT']}")
 
+is_vercel = os.environ.get('VERCEL', False) or os.environ.get('VERCEL_ENV')
+
+
+# Classe para dividir sessões grandes em múltiplos cookies quando necessário
+class SplitSessionInterface(SecureCookieSessionInterface):
+    """Implementação de sessão que divide dados grandes em múltiplos cookies"""
+
+    def save_session(self, app, session, response):
+        # Se estamos no Vercel e o tamanho da sessão é grande
+        if is_vercel and session:
+            try:
+                # Verificar tamanho aproximado da sessão serializada
+                session_data = self.get_signing_serializer(app).dumps(dict(session))
+                if len(session_data) > 3000:  # Evitar cookies muito grandes
+                    # Dividir somente dados críticos específicos
+                    self._split_session(app, session, response)
+                    return
+            except Exception as e:
+                app.logger.error(f"Erro ao verificar tamanho da sessão: {e}")
+
+        # Caso contrário, usar o comportamento padrão
+        super().save_session(app, session, response)
+
+    def _split_session(self, app, session, response):
+        """Divide a sessão mantendo apenas dados críticos"""
+        # Extrair e preservar apenas dados críticos de autenticação
+        essential_data = {
+            'usuario_id': session.get('usuario_id'),
+            'usuario_nome': session.get('usuario_nome'),
+            'is_admin': session.get('is_admin', False),
+            'api_key': session.get('api_key')
+        }
+
+        # Serializar e definir como cookie
+        serializer = self.get_signing_serializer(app)
+        cookie_data = serializer.dumps(essential_data)
+
+        # Definir cookie de sessão com prazo de validade
+        cookie_name = self.get_cookie_name(app)
+        domain = self.get_cookie_domain(app)
+        path = self.get_cookie_path(app)
+
+        response.set_cookie(
+            cookie_name,
+            cookie_data,
+            httponly=app.config['SESSION_COOKIE_HTTPONLY'],
+            secure=app.config['SESSION_COOKIE_SECURE'],
+            expires=self.get_expiration_time(app, session),
+            domain=domain,
+            path=path,
+            samesite=app.config['SESSION_COOKIE_SAMESITE']
+        )
+
+        # Log para depuração
+        app.logger.info(f"Sessão dividida: mantendo apenas {len(essential_data)} dados essenciais")
+
+
+# Aplicar interface de sessão personalizada apenas em ambiente Vercel
+if is_vercel:
+    app.session_interface = SplitSessionInterface()
+    app.logger.info("Usando interface de sessão personalizada para Vercel")
+
+
+# Evento antes de cada requisição
+@app.before_request
+def vercel_session_handle():
+    """Manipulação específica de sessão para ambiente Vercel"""
+    if is_vercel and request.method != 'OPTIONS':
+        # Preservar dados recém-definidos na sessão
+        for key in list(session.keys()):
+            if key not in ['usuario_id', 'usuario_nome', 'is_admin', 'api_key']:
+                app.logger.info(f"Removendo dado não essencial da sessão: {key}")
+                session.pop(key, None)
+
 
 # 4. Detect and log session issues
 @app.before_request
@@ -56,6 +135,61 @@ def log_session_info():
     else:
         print(f"No authenticated user in session. Session keys: {list(session.keys())}")
 
+
+@app.before_request
+def auth_middleware():
+    if request.method == 'OPTIONS' or request.path in ['/login', '/logout', '/static/', '/favicon.ico',
+                                                       '/debug/session']:
+        return
+
+    # Se autenticado na sessão
+    if 'usuario_id' in session:
+        return
+
+    # Verificar token alternativo
+    auth_token = request.cookies.get('auth_token')
+    if auth_token:
+        user_data = validate_auth_token(auth_token)
+        if user_data:
+            # Restaurar sessão do token
+            session['usuario_id'] = user_data['usuario_id']
+            session['usuario_nome'] = user_data['usuario_nome']
+            session['is_admin'] = user_data['is_admin']
+
+            # Carregar API key
+            api_key = get_api_key(user_data['usuario_id'])
+            if api_key:
+                session['api_key'] = api_key
+            return
+
+    # Redirecionar ou negar acesso
+    if request.path.startswith('/api/'):
+        return jsonify({'error': 'Não autenticado'}), 403
+    else:
+        return redirect(url_for('login'))
+
+
+# Adicionar token em cada resposta
+@app.after_request
+def add_auth_token(response):
+    if 'usuario_id' in session and response.status_code < 400:
+        user_data = {
+            'usuario_id': session.get('usuario_id'),
+            'usuario_nome': session.get('usuario_nome'),
+            'is_admin': session.get('is_admin', False)
+        }
+
+        token = generate_auth_token(user_data)
+
+        response.set_cookie(
+            'auth_token',
+            token,
+            max_age=12 * 60 * 60,
+            httponly=True,
+            samesite='Lax',
+            secure=False  # True em produção HTTPS
+        )
+    return response
 
 # 5. Add session debug endpoint
 @app.route('/debug/session')
@@ -72,6 +206,56 @@ def debug_session():
             'session_type': app.config.get('SESSION_TYPE')
         }
     })
+
+
+def generate_auth_token(user_data):
+    expiry = int((datetime.now() + timedelta(hours=12)).timestamp())
+    token_data = {
+        'uid': user_data.get('usuario_id'),
+        'name': user_data.get('usuario_nome'),
+        'admin': user_data.get('is_admin', False),
+        'exp': expiry
+    }
+
+    data_str = json.dumps(token_data)
+    data_b64 = base64.b64encode(data_str.encode()).decode()
+
+    signature = hmac.new(
+        SECRET_AUTH_KEY.encode(),
+        data_b64.encode(),
+        hashlib.sha256
+    ).hexdigest()
+
+    return f"{data_b64}.{signature}"
+
+
+# Função para validar token
+def validate_auth_token(token):
+    try:
+        data_b64, signature = token.split('.')
+
+        expected_sig = hmac.new(
+            SECRET_AUTH_KEY.encode(),
+            data_b64.encode(),
+            hashlib.sha256
+        ).hexdigest()
+
+        if not hmac.compare_digest(signature, expected_sig):
+            return None
+
+        data_str = base64.b64decode(data_b64).decode()
+        data = json.loads(data_str)
+
+        if data.get('exp', 0) < datetime.now().timestamp():
+            return None
+
+        return {
+            'usuario_id': data.get('uid'),
+            'usuario_nome': data.get('name'),
+            'is_admin': data.get('admin', False)
+        }
+    except:
+        return None
 
 def format_large_number(value):
     """Formata números grandes com separadores de milhar"""
@@ -810,6 +994,28 @@ def login():
             response = supabase.table("usuarios").select("*").eq("nome", nome).execute()
             usuario = response.data[0] if response.data else None
 
+            if 'usuario_id' in session:
+                response = redirect(url_for("home"))
+
+                # Adicionar token na resposta
+                user_data = {
+                    'usuario_id': session['usuario_id'],
+                    'usuario_nome': session['usuario_nome'],
+                    'is_admin': session.get('is_admin', False)
+                }
+                token = generate_auth_token(user_data)
+
+                response.set_cookie(
+                    'auth_token',
+                    token,
+                    max_age=12 * 60 * 60,
+                    httponly=True,
+                    samesite='Lax',
+                    secure=False  # True em produção HTTPS
+                )
+
+                return response
+
             if not usuario:
                 print("Usuário não encontrado no banco de dados.")
                 return render_template("login.html", error="Usuário ou senha inválidos.")
@@ -1371,7 +1577,9 @@ def rag_assistant():
 @app.route('/logout')
 def logout():
     session.clear()
-    return redirect(url_for('login'))
+    response = redirect(url_for('login'))
+    response.delete_cookie('auth_token')
+    return response
 
 
 if __name__ == '__main__':

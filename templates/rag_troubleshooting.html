@@ -1029,159 +1029,157 @@
 
         // Initialize: Check if there's an existing conversation to load
         document.addEventListener('DOMContentLoaded', function() {
-            console.log("Setting up RAG integration with improved authentication handling");
+            // Adicionar um elemento invisível para mensagens de depuração
+            const debugDiv = document.createElement('div');
+            debugDiv.id = 'session-debug-panel';
+            debugDiv.style.cssText = `
+                position: fixed;
+                bottom: 0;
+                right: 0;
+                background: rgba(0,0,0,0.8);
+                color: #fff;
+                padding: 10px;
+                border-radius: 5px 0 0 0;
+                font-family: monospace;
+                font-size: 12px;
+                max-width: 320px;
+                max-height: 200px;
+                overflow-y: auto;
+                z-index: 10000;
+                display: none;
+            `;
+            document.body.appendChild(debugDiv);
 
-            // Make sure RAG assistant ID is set
-            sessionStorage.setItem('selected_assistant_id', 'asst_LqpNV5KZlig3wHiaY7RaAofw');
-
-            // Check if this assistant is RAG-enabled (with retries)
-            checkRagAssistant(3);
-
-            // Add a debug button
+            // Botão para mostrar/esconder o painel
             const debugButton = document.createElement('button');
-            debugButton.id = 'ragDebugButton';
-            debugButton.innerHTML = '<i class="fas fa-bug"></i>';
-            debugButton.title = 'Test RAG Context';
+            debugButton.id = 'debug-button';
+            debugButton.innerText = 'Debug';
             debugButton.style.cssText = `
                 position: fixed;
-                right: 20px;
-                bottom: 150px;
-                width: 50px;
-                height: 50px;
-                background: #e53e3e;
-                border-radius: 50%;
-                color: white;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                cursor: pointer;
-                box-shadow: 0 2px 10px rgba(0,0,0,0.2);
-                z-index: 960;
-                font-size: 1.2rem;
-                transition: all 0.2s ease;
+                bottom: 10px;
+                right: 10px;
+                background: #444;
+                color: #fff;
                 border: none;
+                border-radius: 4px;
+                padding: 5px 10px;
+                font-size: 12px;
+                cursor: pointer;
+                z-index: 10001;
             `;
-
-            debugButton.addEventListener('click', testRagContext);
             document.body.appendChild(debugButton);
 
-            // Add session debug button
-            const sessionDebugButton = document.createElement('button');
-            sessionDebugButton.id = 'sessionDebugButton';
-            sessionDebugButton.innerHTML = '<i class="fas fa-key"></i>';
-            sessionDebugButton.title = 'Check Session Status';
-            sessionDebugButton.style.cssText = `
-                position: fixed;
-                right: 20px;
-                bottom: 210px;
-                width: 50px;
-                height: 50px;
-                background: #3182ce;
-                border-radius: 50%;
-                color: white;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                cursor: pointer;
-                box-shadow: 0 2px 10px rgba(0,0,0,0.2);
-                z-index: 960;
-                font-size: 1.2rem;
-                transition: all 0.2s ease;
-                border: none;
-            `;
+            // Função para testar a sessão
+            function checkSession() {
+                fetch('/debug/session')
+                    .then(response => response.json())
+                    .then(data => {
+                        debugDiv.innerHTML = `
+                            <h4>Session Debug</h4>
+                            <p>Session Active: ${data.session_active}</p>
+                            <p>Usuario ID: ${data.usuario_id || 'None'}</p>
+                            <p>Session Keys: ${data.session_keys?.join(', ') || 'None'}</p>
+                            <p>Last Check: ${new Date().toLocaleTimeString()}</p>
+                            <p>Cookie Config:</p>
+                            <ul>
+                                <li>Secure: ${data.session_cookie_config?.secure}</li>
+                                <li>HttpOnly: ${data.session_cookie_config?.httponly}</li>
+                                <li>SameSite: ${data.session_cookie_config?.samesite}</li>
+                                <li>Type: ${data.session_cookie_config?.session_type}</li>
+                            </ul>
+                        `;
 
-            sessionDebugButton.addEventListener('click', async () => {
-                const isAuthenticated = await checkSessionStatus();
-                alert(`Sessão autenticada: ${isAuthenticated ? 'SIM' : 'NÃO'}`);
+                        // Verificar se a sessão foi perdida
+                        if (!data.usuario_id && hadSession) {
+                            notifySessionLost();
+                        }
+
+                        // Armazenar se tínhamos uma sessão
+                        hadSession = !!data.usuario_id;
+                    })
+                    .catch(err => {
+                        debugDiv.innerHTML = `
+                            <h4>Session Debug Error</h4>
+                            <p>${err.toString()}</p>
+                            <p>Last Check: ${new Date().toLocaleTimeString()}</p>
+                        `;
+                    });
+            }
+
+            // Verificar se a sessão existia antes
+            let hadSession = false;
+
+            // Função para notificar perda de sessão
+            function notifySessionLost() {
+                const notification = document.createElement('div');
+                notification.style.cssText = `
+                    position: fixed;
+                    top: 20px;
+                    left: 50%;
+                    transform: translateX(-50%);
+                    background: #ff4444;
+                    color: white;
+                    padding: 10px 20px;
+                    border-radius: 4px;
+                    font-weight: bold;
+                    box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+                    z-index: 10000;
+                `;
+                notification.innerHTML = `
+                    <div style="display: flex; align-items: center;">
+                        <div style="margin-right: 10px;">⚠️</div>
+                        <div>Sessão perdida! Faça login novamente.</div>
+                    </div>
+                `;
+                document.body.appendChild(notification);
+
+                // Auto remover após 10 segundos
+                setTimeout(() => {
+                    notification.remove();
+                }, 10000);
+            }
+
+            // Toggle do painel de debug
+            debugButton.addEventListener('click', function() {
+                const isVisible = debugDiv.style.display === 'block';
+                debugDiv.style.display = isVisible ? 'none' : 'block';
+                if (!isVisible) {
+                    checkSession(); // Verificar sessão ao mostrar
+                }
             });
-            document.body.appendChild(sessionDebugButton);
 
-            // Override the sendMessage function to ensure RAG context is fetched with throttling
-            const originalSendMessage = window.sendMessage;
-            if (typeof originalSendMessage === 'function') {
-                window.sendMessage = function() {
-                    const message = document.getElementById('user-input').value.trim();
-                    if (message) {
-                        console.log("Overridden sendMessage called, fetching RAG context with throttling");
-                        throttledFetchRagContext(message);
-                    }
-                    return originalSendMessage.apply(this, arguments);
-                };
-                console.log("Successfully overridden sendMessage function");
-            } else {
-                console.warn("Couldn't find sendMessage function to override");
-            }
-
-            // Also initialize RAG context panel
-            const contentEl = document.getElementById('ragContextContent');
-            contentEl.innerHTML = `
-                <div class="empty-context">
-                    <i class="fas fa-database"></i>
-                    <p>Envie uma mensagem para ver as fontes de conhecimento relevantes.</p>
-                    <p style="font-size: 0.9rem; margin-top: 10px; color: #4a5568;">
-                        <i class="fas fa-info-circle"></i> Se nenhuma fonte aparecer, verifique se a integração RAG está configurada corretamente.
-                    </p>
-                </div>
-            `;
-
-            // Periodically check session status
-            setInterval(async () => {
-                const isAuthenticated = await checkSessionStatus();
-                if (!isAuthenticated) {
-                    console.warn("Session authentication check failed");
+            // Verificar sessão periodicamente se o painel estiver visível
+            setInterval(() => {
+                if (debugDiv.style.display === 'block') {
+                    checkSession();
                 }
-            }, 30000); // Check every 30 seconds
-        });
+            }, 5000);
 
-        // Add event listener for localStorage changes (in case multiple tabs are open)
-        window.addEventListener('storage', function(e) {
-            if (e.key === 'ragContextCache') {
-                console.log('RAG context cache updated in another tab');
-            }
-        });
+            // Verificar sessão inicialmente após carregar
+            setTimeout(checkSession, 1000);
 
-        // Default implementation of updateRagContextPanel in case it doesn't exist
-        if (typeof updateRagContextPanel !== 'function') {
-            window.updateRagContextPanel = function(context) {
-                console.log("Default updateRagContextPanel called:", context);
-
-                const contentEl = document.getElementById('ragContextContent');
-                if (!contentEl) {
-                    console.error("RAG context panel content element not found");
-                    return;
-                }
-
-                if (!context || context.length === 0) {
-                    contentEl.innerHTML = `
-                        <div class="empty-context">
-                            <i class="fas fa-search"></i>
-                            <p>Nenhuma fonte de conhecimento relevante encontrada para esta consulta.</p>
-                        </div>
-                    `;
-                    return;
-                }
-
-                let html = '';
-
-                context.forEach((item, index) => {
-                    const score = item.score ? (item.score * 100).toFixed(1) + '%' : 'N/A';
-                    const source = item.source || 'Base de Conhecimento';
-
-                    html += `
-                        <div class="rag-source-item">
-                            <h4><i class="fas fa-file-alt"></i> Fonte #${index + 1}</h4>
-                            <p>${item.text}</p>
-                            <div class="rag-meta">
-                                <span><i class="fas fa-bookmark"></i> ${source}</span>
-                                <span class="score-badge">Relevância: ${score}</span>
-                            </div>
-                        </div>
-                    `;
-                });
-
-                contentEl.innerHTML = html;
+            // Adicionar evento para verificar sessão após cada navegação Ajax
+            const originalFetch = window.fetch;
+            window.fetch = function() {
+                return originalFetch.apply(this, arguments)
+                    .then(response => {
+                        // Se o painel estiver visível, verificar sessão após fetch
+                        if (debugDiv.style.display === 'block') {
+                            setTimeout(checkSession, 500);
+                        }
+                        return response;
+                    });
             };
-        }
+
+            // Detectar quando uma requisição falha com 401 (não autorizado)
+            window.addEventListener('unhandledrejection', function(event) {
+                if (event.reason && event.reason.response && event.reason.response.status === 401) {
+                    notifySessionLost();
+                }
+            });
+
+            console.log("Session debug tools initialized");
+        });
         {% endif %}
     </script>
 </body>
